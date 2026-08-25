@@ -93,7 +93,13 @@ export const LINE_FADE = 0.6;
  * Colour cycle for consecutive words within a line (palette keys, not hex).
  * Phase 7 seeds the *starting* index per line so it is stable across replays.
  */
-export const WORD_COLOR_CYCLE = ['goldHi', 'whiteSpark', 'green', 'blue'];
+/**
+ * Blue is deliberately absent. `blue` on the night sky is the lowest-contrast
+ * pairing in the palette and those words were measurably the hardest to read;
+ * it stays in the decorative bursts, where legibility is not the job. Gold and
+ * white carry the text, with green as the only accent.
+ */
+export const WORD_COLOR_CYCLE = ['goldHi', 'whiteSpark', 'goldHi', 'green'];
 
 /** SURPRISE is gold + white only. */
 export const SURPRISE_COLORS = ['goldHi', 'whiteSpark'];
@@ -293,6 +299,18 @@ export const SCHEDULE = [
   { t: T.LIFTOFF, kind: 'liftoff', payload: { duration: T.CLIMB_END - T.LIFTOFF } },
   { t: T.LIFTOFF, kind: 'sound', payload: { name: 'launch' } },
   { t: T.LIFTOFF, kind: 'sound', payload: { name: 'ambient' } },
+  // The launch thump only covers 1.2 s of a 2.7 s climb; the whistle carries
+  // the shell the rest of the way up, and the wind sits under the camera rise.
+  {
+    t: T.LIFTOFF + 0.32,
+    kind: 'sound',
+    payload: { name: 'travel', duration: T.BIG_BURST - T.LIFTOFF - 0.32 },
+  },
+  {
+    t: T.LIFTOFF,
+    kind: 'sound',
+    payload: { name: 'wind', duration: T.BIG_BURST - T.LIFTOFF + 0.6 },
+  },
   { t: T.LIFTOFF, kind: 'cameraFollow', payload: { duration: T.CLIMB_END - T.LIFTOFF } },
 
   // --- The big burst --------------------------------------------------

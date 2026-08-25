@@ -8,8 +8,13 @@ import { createRng, SEEDS } from './engine/rng.js';
 import { createWorldMetrics, createSky } from './scene/sky.js';
 import { createGround } from './scene/ground.js';
 import { createClouds } from './scene/clouds.js';
-import { createSetpiece } from './scene/setpiece.js';
+import {
+  createSetpiece,
+  SETPIECE_WIDTH,
+  SETPIECE_HEIGHT,
+} from './scene/setpiece.js';
 import { drawRocket } from './scene/rocket.js';
+import { easeInOutCubic } from './engine/easing.js';
 
 import { PALETTE } from './config/palette.js';
 import { createParticles, particleCap } from './fx/particles.js';
@@ -193,6 +198,50 @@ if (!canvasEl) {
     ctx.restore();
   }
 
+  /**
+   * The opening crop.
+   *
+   * The set-piece is a fixed number of world pixels wide, so on a large
+   * monitor it was a small object in a big landscape while on a phone it
+   * nearly filled the frame — the same scene reading completely differently
+   * depending on the screen. This scales the whole composited frame so the
+   * firework occupies the SAME fraction of the viewport whatever the size or
+   * aspect ratio, then pulls back to 1 as the rocket climbs.
+   */
+  const OPEN_SPAN = 0.62;
+  const OPEN_SPAN_V = 0.72;
+  // High enough that even a 2560-wide monitor still gets the intended crop
+  // rather than falling short of it; the scene is vector, so it stays crisp.
+  const OPEN_ZOOM_MAX = 4.8;
+
+  function openZoom() {
+    const pieceWidth = SETPIECE_WIDTH * metrics.setpieceScale;
+    const pieceHeight = SETPIECE_HEIGHT * metrics.setpieceScale;
+
+    // Both axes, then the smaller. Width alone is right for tall phones but
+    // would crop the rocket on a short landscape window — 812x375 wants a
+    // tighter crop than its width implies. Taking the minimum means the
+    // firework holds the same apparent size across aspect ratios instead of
+    // being framed by whichever dimension happens to be generous.
+    const byWidth = (OPEN_SPAN * view.width) / pieceWidth;
+    const byHeight = (OPEN_SPAN_V * view.height) / pieceHeight;
+
+    return Math.max(1, Math.min(OPEN_ZOOM_MAX, Math.min(byWidth, byHeight)));
+  }
+
+  /** Screen-space point the crop is centred on: the firework, then the rocket. */
+  function focalPoint() {
+    if (director.flying) {
+      const r = director.rocket;
+      return { x: r.x, y: r.y };
+    }
+    // Anchored near the foot of the set-piece rather than its middle: content
+    // moves away from the focal point, so pinning the base lifts the whole
+    // firework up into the frame instead of pushing it off the bottom.
+    const c = setpiece.localToWorld(SETPIECE_WIDTH / 2, SETPIECE_HEIGHT * 0.96);
+    return { x: c.x, y: c.y - camera.y };
+  }
+
   function render(dt) {
     director.update(dt);
 
@@ -202,6 +251,18 @@ if (!canvasEl) {
     setpiece.update(dt);
     particles.update(dt);
 
+    // Framing. Everything below is drawn inside this transform — scene and
+    // particles alike — so the crop can never put the two out of register.
+    const zoom = 1 + (openZoom() - 1) * (1 - easeInOutCubic(director.openness));
+    const zoomed = zoom > 1.001;
+    ctx.save();
+    if (zoomed) {
+      const f = focalPoint();
+      ctx.translate(f.x, f.y);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-f.x, -f.y);
+    }
+
     sky.draw(ctx, camera);
     clouds.draw(ctx, camera, 'behind');
     ground.draw(ctx, camera);
@@ -210,10 +271,7 @@ if (!canvasEl) {
     if (director.reducedMotion) {
       clouds.draw(ctx, camera, 'front');
       drawCalmLine(director.calmLine);
-      return;
-    }
-
-    if (director.flying) {
+    } else if (director.flying) {
       // Mid-flight: smoke < embers < flame < rocket, all inside the cloud
       // stack so the near banks can occlude the whole assembly.
       const r = director.rocket;
@@ -225,6 +283,8 @@ if (!canvasEl) {
       clouds.draw(ctx, camera, 'front');
       particles.render(ctx);
     }
+
+    ctx.restore();
   }
 
   const loop = createLoop(render);

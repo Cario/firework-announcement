@@ -316,9 +316,12 @@ function sampleUncached(text, requested, italic, letterSpacing, maxWidth, densit
   // elderly readers can read this. A 3 px grid with the plan's 1.6/2.6 px spark
   // radii gives dots that just touch, so strokes read continuous while still
   // clearly built from embers.
-  let density = densityOpt || Math.round(fontSize * 0.075);
+  // Tightened from 0.075 / floor 3 after reading the rendered lines back: a
+  // denser grid puts more embers across each stroke, which is the single
+  // biggest lever on whether a word reads at arm's length.
+  let density = densityOpt || Math.round(fontSize * 0.066);
   if (density < 3) density = 3;
-  if (density > 7) density = 7;
+  if (density > 6) density = 6;
 
   const pad = Math.ceil(fontSize * 0.4);
   const canvasW = Math.max(2, Math.ceil(width) + pad * 2);
@@ -494,7 +497,7 @@ export function emitTextResolve(opts) {
     opts.sizeScale !== undefined
       ? opts.sizeScale
       : opts.density
-        ? clamp(opts.density / 4.4, 0.6, 1.6)
+        ? clamp(opts.density / 3.7, 0.7, 1.9)
         : 1;
   const rng = system.rng;
 

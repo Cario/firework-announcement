@@ -121,6 +121,16 @@ const FLASH = { x: 199, y: 149, count: 14, rMin: 6, rMax: 20, size: 2.4 };
 /** Fuse burn duration once lit, in seconds. Timeline 2.3: 0 -> 1.40. */
 export const FUSE_BURN_SECONDS = 1.4;
 
+/**
+ * The real strike, on tap. The match travels to the fuse tip, the fuse
+ * catches, and the match is drawn back. The ghost demo has been showing this
+ * exact move on a loop, so the tap simply performs what was promised — it
+ * lands on the same offsets as `DEMO_KEYS`.
+ */
+const STRIKE_TRAVEL = 0.42;
+const STRIKE_RETREAT = 0.45;
+const STRIKE_TO = { dx: -62, dy: 26 };
+
 /** Interpolate a keyframe track with CSS `ease-in-out` between stops. */
 function sampleTrack(keys, u, out) {
   let i = 1;
@@ -193,6 +203,7 @@ export function createSetpiece(metrics, options = {}) {
   let state = 'idle';
   let burnSeconds = FUSE_BURN_SECONDS;
   let burnT = 0;
+  let strikeT = 0;
   let burnDone = false;
 
   const demoOut = { a: 0, dx: 0, dy: 0 };
@@ -338,6 +349,10 @@ export function createSetpiece(metrics, options = {}) {
       return fusePath;
     },
     get burnProgress() {
+      // 'launched' has to count as fully burnt. Falling back to 0 here is what
+      // made the whole fuse reappear on the ground the instant the rocket
+      // left: the burn had finished, but the state had moved on past it.
+      if (state === 'launched') return 1;
       return state === 'burning' || state === 'burnt'
         ? clamp01(burnT / burnSeconds)
         : 0;
@@ -387,10 +402,13 @@ export function createSetpiece(metrics, options = {}) {
      */
     startFuseBurn(seconds = FUSE_BURN_SECONDS) {
       api.stopIdleDemo();
-      burnSeconds = seconds;
+      // The match has to physically reach the fuse before it can light it, so
+      // the travel comes out of the same budget the burn was given.
+      burnSeconds = Math.max(0.3, seconds - STRIKE_TRAVEL);
       burnT = 0;
+      strikeT = 0;
       burnDone = false;
-      state = 'burning';
+      state = 'striking';
     },
 
     /** Hide the rocket so a later phase can draw the flying one instead. */
@@ -403,6 +421,7 @@ export function createSetpiece(metrics, options = {}) {
     reset() {
       time = 0;
       burnT = 0;
+      strikeT = 0;
       burnDone = false;
       demoRunning = true;
       rocketVisible = true;
@@ -411,6 +430,14 @@ export function createSetpiece(metrics, options = {}) {
 
     update(dt) {
       time += dt;
+      if (state === 'striking') {
+        strikeT += dt;
+        if (strikeT >= STRIKE_TRAVEL) {
+          strikeT = STRIKE_TRAVEL;
+          state = 'burning';
+          burnT = 0;
+        }
+      }
       if (state === 'burning') {
         burnT += dt;
         if (burnT >= burnSeconds) {
@@ -464,7 +491,8 @@ export function createSetpiece(metrics, options = {}) {
       }
 
       // --- Unlit fuse tip ------------------------------------------------
-      if (state === 'idle' || state === 'armed') {
+      // Still unlit while the match is on its way over.
+      if (state === 'idle' || state === 'armed' || state === 'striking') {
         ctx.fillStyle = PALETTE.fuse;
         ctx.beginPath();
         ctx.arc(toWorldX(TIP.x), toWorldY(TIP.y), TIP.r * scale, 0, TAU);
@@ -561,11 +589,29 @@ export function createSetpiece(metrics, options = {}) {
         }
       }
 
-      // --- The real, lit match at rest ------------------------------------
+      // --- The real, lit match --------------------------------------------
+      // At rest until the tap, then in to the fuse tip and back out again.
       if (state !== 'launched') {
         const flick =
           0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
-        drawMatch(ctx, 1, MATCH.x, MATCH.y, flick);
+
+        let reach = 0;
+        if (state === 'striking') {
+          // Ease-out on the way in, so it arrives rather than slams.
+          const p = clamp01(strikeT / STRIKE_TRAVEL);
+          reach = 1 - (1 - p) * (1 - p);
+        } else if (state === 'burning' || state === 'burnt') {
+          const q = clamp01(burnT / STRIKE_RETREAT);
+          reach = 1 - q * q;
+        }
+
+        drawMatch(
+          ctx,
+          1,
+          MATCH.x + STRIKE_TO.dx * reach,
+          MATCH.y + STRIKE_TO.dy * reach,
+          flick
+        );
       }
 
       ctx.globalAlpha = 1;

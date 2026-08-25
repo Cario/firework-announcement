@@ -244,7 +244,7 @@ function makeFuse(startAt, gain, opts) {
   band.Q.value = 1.4;
 
   const level = ctx.createGain();
-  attackHoldRelease(level.gain, startAt, 0.05 * gain, 0.06, endAt - 0.12, endAt);
+  attackHoldRelease(level.gain, startAt, 0.30 * gain, 0.06, endAt - 0.12, endAt);
 
   source.connect(band);
   band.connect(level);
@@ -273,7 +273,7 @@ function makeLaunch(startAt, gain) {
   band.frequency.exponentialRampToValueAtTime(260, startAt + 1.1);
 
   const air = ctx.createGain();
-  attackDecay(air.gain, startAt, 0.28 * gain, 0.04, endAt);
+  attackDecay(air.gain, startAt, 0.85 * gain, 0.04, endAt);
 
   source.connect(band);
   band.connect(air);
@@ -287,7 +287,7 @@ function makeLaunch(startAt, gain) {
   osc.frequency.exponentialRampToValueAtTime(70, startAt + 1.1);
 
   const body = ctx.createGain();
-  attackDecay(body.gain, startAt, 0.10 * gain, 0.05, endAt);
+  attackDecay(body.gain, startAt, 0.34 * gain, 0.05, endAt);
 
   osc.connect(body);
   body.connect(voice.out);
@@ -313,7 +313,7 @@ function makeBoom(startAt, gain) {
   osc.frequency.exponentialRampToValueAtTime(34, startAt + 0.5);
 
   const low = ctx.createGain();
-  attackDecay(low.gain, startAt, 0.55 * gain, 0.012, endAt);
+  attackDecay(low.gain, startAt, 0.78 * gain, 0.012, endAt);
 
   osc.connect(low);
   low.connect(voice.out);
@@ -326,7 +326,7 @@ function makeBoom(startAt, gain) {
   lp.frequency.value = 420;
 
   const rumble = ctx.createGain();
-  attackDecay(rumble.gain, startAt, 0.35 * gain, 0.01, startAt + 0.55);
+  attackDecay(rumble.gain, startAt, 0.52 * gain, 0.01, startAt + 0.55);
 
   source.connect(lp);
   lp.connect(rumble);
@@ -358,7 +358,7 @@ function makeCrackle(startAt, gain) {
   for (let i = 0; i < grains; i += 1) {
     const at = startAt + Math.random() * spread;
     const length = 0.025 + Math.random() * 0.02;
-    const peak = (0.03 + Math.random() * 0.06) * gain;
+    const peak = (0.10 + Math.random() * 0.16) * gain;
 
     const source = noiseSource(false);
     const level = ctx.createGain();
@@ -389,7 +389,7 @@ function makeSmallPop(startAt, gain) {
   osc.frequency.exponentialRampToValueAtTime(90 * detune, startAt + 0.2);
 
   const level = ctx.createGain();
-  attackDecay(level.gain, startAt, 0.22 * gain, 0.006, endAt);
+  attackDecay(level.gain, startAt, 0.46 * gain, 0.006, endAt);
 
   osc.connect(level);
   level.connect(voice.out);
@@ -402,7 +402,7 @@ function makeSmallPop(startAt, gain) {
   hp.frequency.value = 2000;
 
   const click = ctx.createGain();
-  attackDecay(click.gain, startAt, 0.12 * gain, 0.004, startAt + 0.06);
+  attackDecay(click.gain, startAt, 0.26 * gain, 0.004, startAt + 0.06);
 
   source.connect(hp);
   hp.connect(click);
@@ -429,7 +429,7 @@ function makeShimmer(startAt, gain) {
     osc.frequency.value = partials[i] * (1 + (Math.random() - 0.5) * 0.006);
 
     const level = ctx.createGain();
-    attackDecay(level.gain, startAt, 0.05 * gain, 0.012, endAt);
+    attackDecay(level.gain, startAt, 0.14 * gain, 0.012, endAt);
 
     osc.connect(level);
     level.connect(voice.out);
@@ -456,7 +456,7 @@ function makeAmbient(startAt, gain, opts) {
   band.Q.value = 0.8;
 
   const level = ctx.createGain();
-  attackHoldRelease(level.gain, startAt, 0.012 * gain, 1.5, endAt - 1.2, endAt);
+  attackHoldRelease(level.gain, startAt, 0.055 * gain, 1.5, endAt - 1.2, endAt);
 
   source.connect(band);
   band.connect(level);
@@ -467,9 +467,107 @@ function makeAmbient(startAt, gain, opts) {
   return voice;
 }
 
+/**
+ * travel — the shell in the air, after the launch thump has died away.
+ *
+ * A rising whistle (sawtooth through a tight bandpass that tracks it, so it
+ * reads as air rather than as a tone) over a thin noise hiss. The pitch climbs
+ * as it goes, which is what makes it sound like it is getting further away and
+ * still accelerating.
+ */
+function makeTravel(startAt, gain, opts) {
+  const duration = Math.max(0.4, num(opts.duration, 2.4));
+  const endAt = startAt + duration;
+  const voice = newVoice(endAt + 0.1);
+
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(420, startAt);
+  osc.frequency.exponentialRampToValueAtTime(1150, endAt);
+
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.Q.value = 6;
+  band.frequency.setValueAtTime(460, startAt);
+  band.frequency.exponentialRampToValueAtTime(1250, endAt);
+
+  const whistle = ctx.createGain();
+  attackHoldRelease(whistle.gain, startAt, 0.16 * gain, 0.18, endAt - 0.35, endAt);
+
+  osc.connect(band);
+  band.connect(whistle);
+  whistle.connect(voice.out);
+  osc.start(startAt);
+  osc.stop(endAt + 0.06);
+
+  const source = noiseSource(true);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 1800;
+
+  const hiss = ctx.createGain();
+  attackHoldRelease(hiss.gain, startAt, 0.10 * gain, 0.12, endAt - 0.3, endAt);
+
+  source.connect(hp);
+  hp.connect(hiss);
+  hiss.connect(voice.out);
+  source.start(startAt, noiseOffset(0));
+  source.stop(endAt + 0.06);
+
+  voice.sources.push(osc, source);
+  return voice;
+}
+
+/**
+ * wind — the airy bed under the climb. Deliberately subtle: two lowpassed
+ * noise layers at slightly different cutoffs, one of them slowly swept, so it
+ * breathes instead of sitting there as flat hiss.
+ */
+function makeWind(startAt, gain, opts) {
+  const duration = Math.max(0.6, num(opts.duration, 3));
+  const endAt = startAt + duration;
+  const voice = newVoice(endAt + 0.12);
+
+  const body = noiseSource(true);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(320, startAt);
+  lp.frequency.linearRampToValueAtTime(760, startAt + duration * 0.6);
+  lp.frequency.linearRampToValueAtTime(420, endAt);
+
+  const bed = ctx.createGain();
+  attackHoldRelease(bed.gain, startAt, 0.22 * gain, 0.5, endAt - 0.6, endAt);
+
+  body.connect(lp);
+  lp.connect(bed);
+  bed.connect(voice.out);
+  body.start(startAt, noiseOffset(0));
+  body.stop(endAt + 0.08);
+
+  const gust = noiseSource(true);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 900;
+  bp.Q.value = 0.7;
+
+  const gustLevel = ctx.createGain();
+  attackHoldRelease(gustLevel.gain, startAt, 0.11 * gain, 0.9, endAt - 0.8, endAt);
+
+  gust.connect(bp);
+  bp.connect(gustLevel);
+  gustLevel.connect(voice.out);
+  gust.start(startAt, noiseOffset(0));
+  gust.stop(endAt + 0.08);
+
+  voice.sources.push(body, gust);
+  return voice;
+}
+
 const RECIPES = {
   fuse: makeFuse,
   launch: makeLaunch,
+  travel: makeTravel,
+  wind: makeWind,
   boom: makeBoom,
   crackle: makeCrackle,
   smallPop: makeSmallPop,
@@ -500,7 +598,25 @@ export async function initAudio() {
       ctx = new Ctor();
       master = ctx.createGain();
       master.gain.value = muted ? 0 : MASTER_GAIN;
-      master.connect(ctx.destination);
+
+      // A limiter between the master bus and the output. The loudest moment of
+      // the piece fires boom, crackle and the tail of the travel whistle within
+      // a few milliseconds of each other; measured at the master those sum
+      // close enough to full scale to distort on a phone speaker. This catches
+      // the peaks without having to make every individual sound timid.
+      // BaseAudioContext.createDynamicsCompressor is standard Web Audio.
+      let output = ctx.destination;
+      if (typeof ctx.createDynamicsCompressor === 'function') {
+        const limiter = ctx.createDynamicsCompressor();
+        limiter.threshold.value = -6;
+        limiter.knee.value = 0;
+        limiter.ratio.value = 20;
+        limiter.attack.value = 0.003;
+        limiter.release.value = 0.15;
+        limiter.connect(ctx.destination);
+        output = limiter;
+      }
+      master.connect(output);
       noiseBuffer = buildNoiseBuffer();
     } catch (err) {
       unavailable = true;
@@ -651,4 +767,22 @@ export function voiceCount(activeOnly) {
     }
   }
   return activeOnly ? activeCount() : voices.length;
+}
+
+/**
+ * Diagnostics. Returns the live context and master bus so a caller can attach
+ * an AnalyserNode and confirm signal is actually reaching the output — the
+ * only way to tell "silent because it is broken" from "silent because nobody
+ * pressed anything yet".
+ *
+ * @returns {{ ctx: AudioContext|null, master: GainNode|null,
+ *             unavailable: boolean, state: string }}
+ */
+export function audioDebug() {
+  return {
+    ctx,
+    master,
+    unavailable,
+    state: ctx ? ctx.state : 'uncreated',
+  };
 }

@@ -45,6 +45,13 @@ import {
 const APEX_VIEW_RATIO = 0.4;
 
 /**
+ * How long the opening crop takes to pull back to the whole scene once the
+ * rocket is away. Slightly longer than the initial acceleration, so the frame
+ * is still widening while the rocket is picking up speed.
+ */
+const ZOOM_OUT_SECONDS = 1.5;
+
+/**
  * Fraction of the climb spent in the initial acceleration. Plan 5.3 asks for
  * `easeInCubic` over the first 0.35 s of a 2.7 s climb.
  */
@@ -236,7 +243,7 @@ export function createDirector(deps) {
 
     for (const word of layout.words) {
       const share = totalWidth > 0 ? word.width / totalWidth : 1 / layout.words.length;
-      const maxPoints = Math.max(70, Math.min(340, Math.floor(budget * share)));
+      const maxPoints = Math.max(90, Math.min(440, Math.floor(budget * share)));
       const info = samplePointsInfo(word.text, {
         fontSize: layout.fontSize,
         italic: layout.italic,
@@ -303,7 +310,9 @@ export function createDirector(deps) {
     const { kind, payload } = event;
 
     if (kind === 'sound') {
-      sound.play(payload.name);
+      // Pass the payload through: the sustained beds (fuse, travel, wind,
+      // ambient) take their length from it.
+      sound.play(payload.name, payload);
       return;
     }
 
@@ -424,14 +433,19 @@ export function createDirector(deps) {
       case 'datelineResolve': {
         const colors = payload.colors || DATELINE_COLORS;
         const size = Math.min(54, Math.max(20, view.width / 15));
+        // The two lines sit a fixed distance apart, derived from the type size,
+        // rather than at fixed fractions of the viewport — nothing goes between
+        // them, so a percentage-based gap just opens a hole on a tall screen.
+        const gap = size * 1.5;
+        const block = view.height * 0.44;
         payload.lines.forEach((text, row) => {
           const info = samplePointsInfo(text, {
             fontSize: row === 0 ? size : size * 0.72,
             italic: false,
             maxWidth: view.width * 0.84,
-            maxPoints: Math.min(420, Math.floor(particles.max * 0.2)),
+            maxPoints: Math.min(460, Math.floor(particles.max * 0.22)),
           });
-          const y = view.height * (row === 0 ? 0.4 : 0.53);
+          const y = row === 0 ? block : block + gap;
           const group = nextTextGroup();
           emitTextResolve({
             system: particles,
@@ -521,7 +535,9 @@ export function createDirector(deps) {
 
     for (const event of eventsBetween(from, t)) handle(event);
 
-    if (t >= T.FUSE_START && t < T.FUSE_END) {
+    // Only once the match has actually reached the fuse and it has caught —
+    // during the strike the cord is still cold.
+    if (t < T.FUSE_END && setpiece.state === 'burning') {
       fuseEmberClock += dt;
       if (fuseEmberClock >= FUSE_EMBER_INTERVAL) {
         fuseEmberClock = 0;
@@ -583,6 +599,22 @@ export function createDirector(deps) {
     /** True when the viewer asked for less motion, so the renderer draws text. */
     get reducedMotion() {
       return reduced;
+    },
+
+    /**
+     * How far the frame has opened out, 0 to 1.
+     *
+     * 0 is the opening crop, crammed in tight on the firework so it reads as
+     * the subject rather than as a detail of a wide landscape; 1 is the whole
+     * scene. It pulls back once the rocket is away. A viewer who asked for
+     * reduced motion gets the wide framing from the start — a moving camera is
+     * exactly what they opted out of.
+     */
+    get openness() {
+      if (reduced) return 1;
+      if (state === 'idle') return 0;
+      if (state === 'finished') return 1;
+      return clamp01((t - T.LIFTOFF) / ZOOM_OUT_SECONDS);
     },
 
     /**
