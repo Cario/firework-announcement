@@ -267,3 +267,57 @@ body {
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------
+   Phase 3 — idle prompt pill
+
+   Sits just above the rocket, matching the approved storyboard's
+   `.cue`: bottom 41% on desktop, 30% on a narrow viewport, where the
+   set-piece has shrunk to 56% and sits lower in the frame. Both
+   positions clear the rocket and the fuse.
+
+   pointer-events: none — the entire viewport is the hit target, and
+   the pill must never swallow the tap it is asking for.
+   --------------------------------------------------------------- */
+
+.prompt-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 41%;
+  transform: translateX(-50%);
+  z-index: 20;
+
+  padding: 8px 20px;
+  border-radius: 24px;
+  background: var(--gold-hi);
+  color: var(--night-0);
+
+  font-family: 'Jost', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-weight: 500;
+  font-size: clamp(14px, 2.1vw, 19px);
+  line-height: 1.2;
+  white-space: nowrap;
+
+  pointer-events: none;
+  transition: opacity 320ms ease;
+}
+
+.prompt-pill--out {
+  opacity: 0;
+}
+
+.prompt-pill[hidden] {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .prompt-pill {
+    bottom: 30%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-pill {
+    transition: none;
+  }
+}

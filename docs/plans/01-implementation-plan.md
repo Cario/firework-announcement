@@ -68,7 +68,21 @@ ctx.createLinearGradient(x0,y0,x1,y1) -> gradient.addColorStop(stop, color)
 ctx.font / textAlign / textBaseline / fillText / measureText
 ctx.getImageData(x,y,w,h) -> ImageData { data: Uint8ClampedArray, width, height }
 ctx.setTransform(a,b,c,d,e,f)
+ctx.clip()                       // added in Phase 3 — see below
 ```
+
+Added during Phase 3 under standing rule 1:
+
+- `ctx.clip()` — Phase 3.3 specifies the cloud silhouette by clipping ("clip a
+  rect covering the lower 48%… stroke the top edge path only… clipped to the
+  shape"), but the API was missing from this list. Source: MDN
+  `CanvasRenderingContext2D.clip()`
+  (https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/clip),
+  baseline since the original Canvas 2D specification. Verified in the target
+  browser before use: `typeof CanvasRenderingContext2D.prototype.clip ===
+  'function'`, and a circular clip plus a full-canvas `fillRect` leaves the
+  corner pixel at alpha 0 and the centre pixel at alpha 255. It is used only
+  in `src/scene/clouds.js`, always inside a `save()`/`restore()` pair.
 
 Notes that matter:
 - `getImageData` on a canvas that has only ever been drawn to by same-origin

@@ -1,52 +1,91 @@
 import './style.css';
 
-import { PALETTE } from './config/palette.js';
 import { setupCanvas } from './engine/canvas.js';
 import { createLoop } from './engine/loop.js';
+import { createCamera } from './engine/camera.js';
 import { createRng, SEEDS } from './engine/rng.js';
+
+import { createWorldMetrics, createSky } from './scene/sky.js';
+import { createGround } from './scene/ground.js';
+import { createClouds } from './scene/clouds.js';
+import { createSetpiece } from './scene/setpiece.js';
+import { createPrompt } from './ui/prompt.js';
 
 /**
  * Boot.
  *
- * Phase 2 wires only enough to prove the engine: a DPR-correct canvas, a
- * running loop, a placeholder sky gradient, and correct behaviour on resize
- * and rotate. The scene, audio, particle system and sequence director arrive
- * in later phases and hang off exactly these three objects.
+ * Phase 3 renders the approved opening frame at rest: a seeded starfield over
+ * a graded night sky, a meadow of hills, treeline and grass, the cloud banks
+ * waiting above the frame for the climb, the interaction set-piece, and the
+ * prompt pill.
+ *
+ * The scene modules are deliberately passive — they expose `update(dt)` and
+ * `draw(ctx, camera)` and know nothing about the sequence. Phase 5 drives the
+ * camera and calls `setpiece.startFuseBurn()`; nothing here has to change.
  */
 
 const canvasEl = document.getElementById('scene');
+const uiEl = document.getElementById('ui');
 
 if (!canvasEl) {
   console.error('[nikkah] #scene canvas not found');
 } else {
-  /** Cached sky gradient. A gradient is tied to the size it was built at, so
-   *  it is rebuilt on re-layout rather than allocated every frame. */
-  let sky = null;
+  const camera = createCamera();
 
-  const view = setupCanvas(canvasEl, () => {
-    sky = null; // invalidate at the new size
-    render(); // repaint immediately, so a resize never shows a stale frame
+  let metrics = null;
+  let sky = null;
+  let ground = null;
+  let clouds = null;
+  let setpiece = null;
+
+  const view = setupCanvas(canvasEl, ({ width, height }) => {
+    relayout(width, height);
+    render(0); // repaint immediately, so a resize never shows a stale frame
   });
 
   const { ctx } = view;
 
-  function buildSky(height) {
-    // Vertical night sky: zenith -> mid at 60% -> horizon at the bottom.
-    // Placeholder for Phase 3's src/scene/sky.js, which adds the starfield
-    // and extends the gradient over the full ~3.2-screen world column.
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, PALETTE.night0);
-    gradient.addColorStop(0.6, PALETTE.night1);
-    gradient.addColorStop(1, PALETTE.night2);
-    return gradient;
+  /** Rebuild every size-dependent piece of geometry for a new viewport. */
+  function relayout(width, height) {
+    metrics = createWorldMetrics(width, height);
+
+    camera.setViewport(width, height);
+    camera.setWorldHeight(metrics.worldHeight);
+
+    if (!sky) {
+      sky = createSky(metrics);
+      ground = createGround(metrics);
+      clouds = createClouds(metrics);
+      setpiece = createSetpiece(metrics);
+    } else {
+      sky.resize(metrics);
+      ground.resize(metrics);
+      clouds.resize(metrics);
+      setpiece.resize(metrics);
+    }
+
+    // At rest the camera sits at the bottom of the world, showing the meadow.
+    camera.reset();
   }
 
-  function render() {
-    const { width, height } = view;
-    if (!sky) sky = buildSky(height);
+  relayout(view.width, view.height);
 
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, width, height);
+  const prompt = uiEl ? createPrompt(uiEl) : null;
+
+  function render(dt) {
+    sky.update(dt);
+    ground.update(dt);
+    clouds.update(dt);
+    setpiece.update(dt);
+
+    // Painter's order. The cloud stack is split around the set-piece so the
+    // rocket passes behind the far banks and in front of the near ones once
+    // the climb starts.
+    sky.draw(ctx, camera);
+    clouds.draw(ctx, camera, 'behind');
+    ground.draw(ctx, camera);
+    setpiece.draw(ctx, camera);
+    clouds.draw(ctx, camera, 'front');
   }
 
   const loop = createLoop(render);
@@ -54,7 +93,7 @@ if (!canvasEl) {
   // Paint once synchronously. The loop pauses itself while the tab is hidden,
   // so without this a page opened in a background tab would sit on an empty
   // black canvas until it was first looked at.
-  render();
+  render(0);
   loop.start();
 
   if (import.meta.env.DEV) {
@@ -70,18 +109,15 @@ if (!canvasEl) {
         .join(' ')
     );
 
-    // Loop proof: report once, about a second in.
-    let frames = 0;
-    const reporter = createLoop((dt, elapsed) => {
-      frames++;
-      if (elapsed >= 1) {
-        console.info(
-          `[nikkah] loop ${frames} frames in ${elapsed.toFixed(3)}s, last dt ${dt.toFixed(4)}s, ` +
-            `canvas ${view.width}x${view.height} css @ dpr ${view.dpr}`
-        );
-        reporter.dispose();
-      }
-    });
-    reporter.start();
+    console.info(
+      `[nikkah] scene ${view.width}x${view.height} css @ dpr ${view.dpr} — ` +
+        `world ${Math.round(metrics.worldHeight)}px, ` +
+        `${sky.starCount} stars, ${ground.counts.trees} trees, ` +
+        `${ground.counts.blades} blades, ${clouds.banks.length} cloud banks, ` +
+        `set-piece scale ${setpiece.scale}`
+    );
+
+    // Expose the scene for manual probing from the console during review.
+    window.__nikkah = { view, camera, sky, ground, clouds, setpiece, prompt, loop };
   }
 }
