@@ -283,23 +283,38 @@ body {
 .prompt-pill {
   position: absolute;
   left: 50%;
-  bottom: 41%;
+  /* `bottom` is set per-frame from JS, measured against the rendered top of
+     the firework, so the crop can never slide the text onto the rocket or the
+     ring. The value here is only a sensible first paint. */
+  bottom: 52%;
   transform: translateX(-50%);
   z-index: 20;
 
-  padding: 8px 20px;
-  border-radius: 24px;
-  background: var(--gold-hi);
-  color: var(--night-0);
+  /* No pill. Standalone text, lifted off the grass by a warm glow with a hard
+     dark shadow underneath it — the glow alone would smear against the light
+     blades, and the dark shadow alone would read as drop-shadowed UI. */
+  color: var(--gold-hi);
+  text-shadow:
+    0 0 18px rgba(240, 194, 94, 0.55),
+    0 0 6px rgba(240, 194, 94, 0.7),
+    0 2px 6px rgba(3, 8, 20, 0.95),
+    0 0 2px rgba(3, 8, 20, 0.9);
 
   font-family: 'Jost', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-weight: 500;
-  font-size: clamp(14px, 2.1vw, 19px);
+  font-size: clamp(16px, 2.4vw, 22px);
+  letter-spacing: 0.01em;
   line-height: 1.2;
   white-space: nowrap;
 
   pointer-events: none;
   transition: opacity 320ms ease;
+  animation: prompt-breathe 2.6s ease-in-out infinite;
+}
+
+@keyframes prompt-breathe {
+  0%, 100% { opacity: 0.86; }
+  50% { opacity: 1; }
 }
 
 .prompt-pill--out {
@@ -310,14 +325,10 @@ body {
   display: none;
 }
 
-@media (max-width: 760px) {
-  .prompt-pill {
-    bottom: 30%;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .prompt-pill {
     transition: none;
+    animation: none;
+    opacity: 1;
   }
 }

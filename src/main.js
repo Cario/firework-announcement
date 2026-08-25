@@ -264,6 +264,29 @@ if (!canvasEl) {
     return { x: view.width / 2, y: view.height };
   }
 
+  /**
+   * Keep the prompt clear of the firework.
+   *
+   * The set-piece's position on screen depends on the crop, which varies with
+   * viewport size, so any fixed `bottom` percentage lands on the rocket at
+   * some sizes and miles away at others. This measures the rendered top of the
+   * rocket — through the same zoom transform the canvas uses — and parks the
+   * text a fixed gap above it, in the clear band of grass.
+   */
+  const PROMPT_GAP = 12;
+
+  function positionPrompt(zoom, focal) {
+    if (!prompt || !prompt.visible) return;
+
+    // Local y=48 is just above the rocket's nose cone.
+    const noseWorld = setpiece.localToWorld(SETPIECE_WIDTH / 2, 48);
+    const noseScreen = noseWorld.y - camera.y;
+    const rendered = focal.y + (noseScreen - focal.y) * zoom;
+
+    const bottomPx = Math.max(12, view.height - rendered + PROMPT_GAP);
+    prompt.el.style.bottom = `${Math.round(bottomPx)}px`;
+  }
+
   function render(dt) {
     director.update(dt);
 
@@ -277,12 +300,15 @@ if (!canvasEl) {
     // particles alike — so the crop can never put the two out of register.
     const zoom = 1 + (openZoom() - 1) * (1 - easeInOutCubic(director.openness));
     const zoomed = zoom > 1.001;
+    const focal = focalPoint();
+
+    positionPrompt(zoom, focal);
+
     ctx.save();
     if (zoomed) {
-      const f = focalPoint();
-      ctx.translate(f.x, f.y);
+      ctx.translate(focal.x, focal.y);
       ctx.scale(zoom, zoom);
-      ctx.translate(-f.x, -f.y);
+      ctx.translate(-focal.x, -focal.y);
     }
 
     sky.draw(ctx, camera);

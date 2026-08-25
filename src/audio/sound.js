@@ -259,7 +259,7 @@ function makeFuse(startAt, gain, opts) {
     const length = 0.004 + Math.random() * 0.012;
     // Squared random: mostly quiet, with occasional snaps.
     const r = Math.random();
-    const peak = (0.035 + r * r * 0.22) * gain;
+    const peak = (0.020 + r * r * 0.13) * gain;
 
     const source = noiseSource(false);
     const level = ctx.createGain();
@@ -280,7 +280,7 @@ function makeFuse(startAt, gain, opts) {
   band.Q.value = 0.9;
 
   const bedLevel = ctx.createGain();
-  attackHoldRelease(bedLevel.gain, startAt, 0.025 * gain, 0.04, endAt - 0.1, endAt);
+  attackHoldRelease(bedLevel.gain, startAt, 0.014 * gain, 0.04, endAt - 0.1, endAt);
 
   bed.connect(band);
   band.connect(bedLevel);
@@ -309,7 +309,7 @@ function makeLaunch(startAt, gain) {
   band.frequency.exponentialRampToValueAtTime(260, startAt + 1.1);
 
   const air = ctx.createGain();
-  attackDecay(air.gain, startAt, 0.85 * gain, 0.04, endAt);
+  attackDecay(air.gain, startAt, 0.42 * gain, 0.04, endAt);
 
   source.connect(band);
   band.connect(air);
@@ -323,7 +323,7 @@ function makeLaunch(startAt, gain) {
   osc.frequency.exponentialRampToValueAtTime(70, startAt + 1.1);
 
   const body = ctx.createGain();
-  attackDecay(body.gain, startAt, 0.34 * gain, 0.05, endAt);
+  attackDecay(body.gain, startAt, 0.17 * gain, 0.05, endAt);
 
   osc.connect(body);
   body.connect(voice.out);
@@ -528,7 +528,7 @@ function makeTravel(startAt, gain, opts) {
   band.frequency.exponentialRampToValueAtTime(1250, endAt);
 
   const whistle = ctx.createGain();
-  attackHoldRelease(whistle.gain, startAt, 0.16 * gain, 0.18, endAt - 0.35, endAt);
+  attackHoldRelease(whistle.gain, startAt, 0.075 * gain, 0.18, endAt - 0.35, endAt);
 
   osc.connect(band);
   band.connect(whistle);
@@ -542,7 +542,7 @@ function makeTravel(startAt, gain, opts) {
   hp.frequency.value = 1800;
 
   const hiss = ctx.createGain();
-  attackHoldRelease(hiss.gain, startAt, 0.10 * gain, 0.12, endAt - 0.3, endAt);
+  attackHoldRelease(hiss.gain, startAt, 0.048 * gain, 0.12, endAt - 0.3, endAt);
 
   source.connect(hp);
   hp.connect(hiss);
@@ -572,7 +572,7 @@ function makeWind(startAt, gain, opts) {
   lp.frequency.linearRampToValueAtTime(420, endAt);
 
   const bed = ctx.createGain();
-  attackHoldRelease(bed.gain, startAt, 0.22 * gain, 0.5, endAt - 0.6, endAt);
+  attackHoldRelease(bed.gain, startAt, 0.10 * gain, 0.5, endAt - 0.6, endAt);
 
   body.connect(lp);
   lp.connect(bed);
@@ -587,7 +587,7 @@ function makeWind(startAt, gain, opts) {
   bp.Q.value = 0.7;
 
   const gustLevel = ctx.createGain();
-  attackHoldRelease(gustLevel.gain, startAt, 0.11 * gain, 0.9, endAt - 0.8, endAt);
+  attackHoldRelease(gustLevel.gain, startAt, 0.05 * gain, 0.9, endAt - 0.8, endAt);
 
   gust.connect(bp);
   bp.connect(gustLevel);
