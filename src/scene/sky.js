@@ -95,8 +95,16 @@ export function createWorldMetrics(viewWidth, viewHeight) {
     scale,
     density,
     uniformScale: Math.min(scale, density),
+    // Below the narrow breakpoint this is the plan's flat 0.56 and phones are
+    // untouched. Above it the set-piece grows with the viewport, because
+    // everything else in the scene already does: trees and grass scale with
+    // `scale`, so a fixed-size firework was the one prop that shrank away as
+    // the monitor got bigger. Growing it keeps the crop modest enough to leave
+    // the treeline in frame.
     setpieceScale:
-      viewWidth <= NARROW_MAX_WIDTH ? NARROW_SETPIECE_SCALE : 1,
+      viewWidth <= NARROW_MAX_WIDTH
+        ? NARROW_SETPIECE_SCALE
+        : clamp(viewWidth / 1100, 1, 1.9),
   };
 }
 

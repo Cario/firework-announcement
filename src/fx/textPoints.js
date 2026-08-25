@@ -360,6 +360,7 @@ function sampleUncached(text, requested, italic, letterSpacing, maxWidth, densit
       width,
       height: fontSize,
       fontSize,
+      letterSpacing: spacing,
       density,
       fontReady,
       failed: true,
@@ -425,10 +426,59 @@ function sampleUncached(text, requested, italic, letterSpacing, maxWidth, densit
     width,
     height: fontSize,
     fontSize,
+    letterSpacing: spacing,
     density,
     fontReady,
     failed: false,
   };
+}
+
+/**
+ * Draw the solid glyph exactly where its sampled sparks are.
+ *
+ * The embers alone leave gaps — a stroke is only as continuous as the grid it
+ * was sampled on, and at small sizes the letters read as dotted rather than
+ * written. So the sparks fly in and form the shape, and then the real letter
+ * fades up through them. This has to mirror `sampleUncached`'s placement move
+ * for move, or the glyph lands a pixel or two off its own embers and the whole
+ * effect turns into a double image: same font string, same `left`/`middle`
+ * alignment, same `x - width / 2` origin, same manual tracking loop.
+ *
+ * Pass the `width`, `fontSize` and `letterSpacing` straight from the
+ * `samplePointsInfo` result — the sampler shrinks the size to fit `maxWidth`,
+ * so re-deriving them here would drift.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string} text
+ * @param {number} x glyph centre
+ * @param {number} y glyph centre (this is the baseline for `middle`)
+ * @param {{ fontSize: number, italic?: boolean, letterSpacing?: number,
+ *           width?: number }} opts
+ */
+export function drawDisplayText(ctx, text, x, y, opts) {
+  const o = opts || {};
+  const fontSize = o.fontSize || FONT_MAX;
+  const italic = o.italic === true;
+  const spacing = o.letterSpacing || 0;
+
+  ctx.font = fontString(fontSize, italic);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  const width =
+    o.width === undefined ? measureDisplayText(text, fontSize, italic, spacing) : o.width;
+  const startX = x - width / 2;
+
+  if (!spacing) {
+    ctx.fillText(text, startX, y);
+    return;
+  }
+  let penX = startX;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    ctx.fillText(ch, penX, y);
+    penX += ctx.measureText(ch).width + spacing;
+  }
 }
 
 // --- Text resolve animation (plan 6.4) ---------------------------------------

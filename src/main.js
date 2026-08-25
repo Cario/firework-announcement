@@ -19,6 +19,7 @@ import { easeInOutCubic } from './engine/easing.js';
 import { PALETTE } from './config/palette.js';
 import { createParticles, particleCap } from './fx/particles.js';
 import { createTrail } from './fx/trail.js';
+import { drawDisplayText } from './fx/textPoints.js';
 
 import { createPrompt } from './ui/prompt.js';
 import { createMuteToggle } from './ui/muteToggle.js';
@@ -210,36 +211,52 @@ if (!canvasEl) {
    */
   const OPEN_SPAN = 0.62;
   const OPEN_SPAN_V = 0.72;
-  // High enough that even a 2560-wide monitor still gets the intended crop
-  // rather than falling short of it; the scene is vector, so it stays crisp.
-  const OPEN_ZOOM_MAX = 4.8;
+
+  /**
+   * Where the horizon should sit in the cropped frame, as a fraction of its
+   * height. This is what keeps the treeline in shot.
+   *
+   * The crop is anchored to the bottom edge of the viewport, so the ground
+   * stays pinned there and the zoom eats into the sky. Left unbounded that is
+   * exactly what happened on a wide monitor: at 1440x900 the frame came out
+   * 78% ground, and past 2000px the horizon left the top of the screen
+   * altogether — a camera pointed at the grass. Solving the mapping for a
+   * fixed horizon gives a hard ceiling on the zoom instead.
+   */
+  const HORIZON_TARGET = 0.42;
 
   function openZoom() {
     const pieceWidth = SETPIECE_WIDTH * metrics.setpieceScale;
     const pieceHeight = SETPIECE_HEIGHT * metrics.setpieceScale;
 
-    // Both axes, then the smaller. Width alone is right for tall phones but
-    // would crop the rocket on a short landscape window — 812x375 wants a
-    // tighter crop than its width implies. Taking the minimum means the
-    // firework holds the same apparent size across aspect ratios instead of
-    // being framed by whichever dimension happens to be generous.
+    // How big the firework wants to be, on each axis.
     const byWidth = (OPEN_SPAN * view.width) / pieceWidth;
     const byHeight = (OPEN_SPAN_V * view.height) / pieceHeight;
 
-    return Math.max(1, Math.min(OPEN_ZOOM_MAX, Math.min(byWidth, byHeight)));
+    // How big the composition will tolerate. With the focal point on the
+    // bottom edge, an unzoomed y maps to vh + (y - vh) * z, so the horizon
+    // (at 1 - groundRatio) lands at HORIZON_TARGET when
+    //   z = (1 - HORIZON_TARGET) / groundRatio.
+    const groundRatio = metrics.groundHeight / view.height;
+    const byHorizon = (1 - HORIZON_TARGET) / Math.max(0.01, groundRatio);
+
+    return Math.max(1, Math.min(byWidth, byHeight, byHorizon));
   }
 
-  /** Screen-space point the crop is centred on: the firework, then the rocket. */
+  /**
+   * Screen-space point the crop expands around.
+   *
+   * The bottom edge of the viewport while the firework is on the ground: that
+   * pins the meadow to the bottom of the frame no matter how tight the crop,
+   * so the zoom only ever eats sky. Once the rocket is away it tracks the
+   * rocket instead, so the pull-back stays centred on the subject.
+   */
   function focalPoint() {
     if (director.flying) {
       const r = director.rocket;
       return { x: r.x, y: r.y };
     }
-    // Anchored near the foot of the set-piece rather than its middle: content
-    // moves away from the focal point, so pinning the base lifts the whole
-    // firework up into the frame instead of pushing it off the bottom.
-    const c = setpiece.localToWorld(SETPIECE_WIDTH / 2, SETPIECE_HEIGHT * 0.96);
-    return { x: c.x, y: c.y - camera.y };
+    return { x: view.width / 2, y: view.height };
   }
 
   function render(dt) {
@@ -282,8 +299,34 @@ if (!canvasEl) {
     } else {
       clouds.draw(ctx, camera, 'front');
       particles.render(ctx);
+      drawGlyphs();
     }
 
+    ctx.restore();
+  }
+
+  /**
+   * The solid letters, fading up through their own embers.
+   *
+   * Sparks alone leave gaps in every stroke, which is what made the sky text
+   * hard to read. The embers still do the forming; this is what they resolve
+   * into.
+   */
+  function drawGlyphs() {
+    const list = director.glyphList;
+    if (!list.length) return;
+    ctx.save();
+    for (let i = 0; i < list.length; i += 1) {
+      const { g, alpha } = list[i];
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = PALETTE[g.color] || PALETTE.goldHi;
+      drawDisplayText(ctx, g.text, g.x, g.y, {
+        fontSize: g.fontSize,
+        italic: g.italic,
+        letterSpacing: g.letterSpacing,
+        width: g.width,
+      });
+    }
     ctx.restore();
   }
 

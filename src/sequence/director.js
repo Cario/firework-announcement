@@ -41,6 +41,17 @@ import {
   nextTextGroup,
 } from '../fx/textPoints.js';
 
+/**
+ * Solid-glyph overlay timing, relative to the word's burst.
+ *
+ * The embers form the shape first; the real letter then fades up through them.
+ * The delay is set just past the point where the first sparks land, so the
+ * word is recognisably itself before it firms up.
+ */
+const GLYPH_DELAY = 0.42;
+const GLYPH_FADE_IN = 0.5;
+const GLYPH_FADE_OUT = 0.5;
+
 /** Where the rocket bursts, as a fraction of the viewport height. */
 const APEX_VIEW_RATIO = 0.4;
 
@@ -49,7 +60,18 @@ const APEX_VIEW_RATIO = 0.4;
  * rocket is away. Slightly longer than the initial acceleration, so the frame
  * is still widening while the rocket is picking up speed.
  */
-const ZOOM_OUT_SECONDS = 1.5;
+const ZOOM_OUT_SECONDS = 1.0;
+
+/**
+ * How long the camera stays put after lift-off before it starts climbing.
+ *
+ * Without this the crop pulls back and the camera pans up at the same time, so
+ * the wide meadow — treeline and all — exists for a fraction of a second
+ * between the two moves. Holding the camera still lets the rocket rise through
+ * a settled frame first, which is also the more natural way to watch something
+ * leave the ground.
+ */
+const FOLLOW_DELAY = 0.55;
 
 /**
  * Fraction of the climb spent in the initial acceleration. Plan 5.3 asks for
@@ -147,6 +169,34 @@ export function createDirector(deps) {
   let calmIndex = 0;
   let calmAlpha = 0;
 
+  /**
+   * Solid letters riding on top of the ember clouds. Each entry carries the
+   * exact metrics the sampler used, so the glyph sits precisely on its sparks.
+   */
+  let glyphs = [];
+
+  function addGlyph(entry) {
+    glyphs.push({
+      text: entry.text,
+      x: entry.x,
+      y: entry.y,
+      fontSize: entry.fontSize,
+      italic: !!entry.italic,
+      letterSpacing: entry.letterSpacing || 0,
+      width: entry.width,
+      color: entry.color,
+      bornAt: t,
+      fadeAt: null,
+    });
+  }
+
+  /** Start the fade-out of every glyph belonging to a finished line. */
+  function fadeGlyphs(predicate) {
+    for (const g of glyphs) {
+      if (g.fadeAt === null && predicate(g)) g.fadeAt = t;
+    }
+  }
+
   // Text groups, so each line can be dispersed as a unit.
   let surpriseGroups = [];
   const lineGroups = { line1: [], line2: [], line3: [], dateline: [] };
@@ -210,7 +260,11 @@ export function createDirector(deps) {
     // piecewise, and the camera only needs the velocity to lead its spring.
     rocketVelY = dt > 0 ? (rocketWorldY - previousY) / dt : 0;
 
-    camera.follow(rocketWorldY, dt, rocketVelY);
+    // The rocket rises through a still frame first; the camera picks it up
+    // once the crop has finished opening out.
+    if (t >= T.LIFTOFF + FOLLOW_DELAY) {
+      camera.follow(rocketWorldY, dt, rocketVelY);
+    }
 
     const screen = rocketScreen();
     trail.emit(dt, screen.x, screen.y + stickLength * rocketScale, 0, rocketVelY, rocketScale);
@@ -251,6 +305,10 @@ export function createDirector(deps) {
       });
       word.points = info.points;
       word.density = info.density;
+      // Kept so the solid glyph can be drawn on exactly these metrics.
+      word.sampleFontSize = info.fontSize;
+      word.letterSpacing = info.letterSpacing;
+      word.sampleWidth = info.width;
     }
 
     lineLayouts[key] = layout;
@@ -282,6 +340,19 @@ export function createDirector(deps) {
       density: word.density,
     });
     lineGroups[key].push(group);
+
+    addGlyph({
+      text: word.text,
+      x: word.x,
+      y: word.y,
+      fontSize: word.sampleFontSize,
+      italic: layout.italic,
+      letterSpacing: word.letterSpacing,
+      width: word.sampleWidth,
+      color: colorName,
+      line: key,
+    });
+    glyphs[glyphs.length - 1].line = key;
   }
 
   function shellFor(key, layout, index) {
@@ -300,6 +371,7 @@ export function createDirector(deps) {
   function disperseLine(key) {
     for (const group of lineGroups[key]) disperseText(particles, group);
     lineGroups[key] = [];
+    fadeGlyphs((g) => g.line === key);
   }
 
   /* ------------------------------------------------------------------ *
@@ -357,10 +429,11 @@ export function createDirector(deps) {
 
       case 'surpriseResolve': {
         const at = apexScreen();
+        const size = Math.min(96, view.width / 7);
         const info = samplePointsInfo(payload.text, {
-          fontSize: Math.min(96, view.width / 7),
+          fontSize: size,
           italic: false,
-          letterSpacing: Math.min(96, view.width / 7) * 0.12,
+          letterSpacing: size * 0.12,
           maxWidth: view.width * 0.84,
           maxPoints: Math.min(760, Math.floor(particles.max * 0.34)),
         });
@@ -377,6 +450,18 @@ export function createDirector(deps) {
           speedMax: 420,
         });
         surpriseGroups.push(group);
+
+        addGlyph({
+          text: payload.text,
+          x: at.x,
+          y: at.y,
+          fontSize: info.fontSize,
+          italic: false,
+          letterSpacing: info.letterSpacing,
+          width: info.width,
+          color: 'goldHi',
+        });
+        glyphs[glyphs.length - 1].line = 'surprise';
         break;
       }
 
@@ -398,6 +483,7 @@ export function createDirector(deps) {
       case 'surpriseFade':
         for (const group of surpriseGroups) disperseText(particles, group);
         surpriseGroups = [];
+        fadeGlyphs((g) => g.line === 'surprise');
         break;
 
       case 'line1Shell':
@@ -457,6 +543,18 @@ export function createDirector(deps) {
             density: info.density,
           });
           lineGroups.dateline.push(group);
+
+          addGlyph({
+            text,
+            x: view.width / 2,
+            y,
+            fontSize: info.fontSize,
+            italic: false,
+            letterSpacing: info.letterSpacing,
+            width: info.width,
+            color: colors[row % colors.length],
+          });
+          glyphs[glyphs.length - 1].line = 'dateline';
         });
         break;
       }
@@ -628,6 +726,31 @@ export function createDirector(deps) {
       return { text: line.text, italic: line.italic, size: line.size, alpha: calmAlpha };
     },
 
+    /**
+     * Solid letters to paint over the ember clouds, with their current alpha.
+     * Entries that have finished fading out are dropped as they are read.
+     */
+    get glyphList() {
+      const out = [];
+      let write = 0;
+      for (let i = 0; i < glyphs.length; i += 1) {
+        const g = glyphs[i];
+        let alpha;
+        if (g.fadeAt === null) {
+          alpha = clamp01((t - g.bornAt - GLYPH_DELAY) / GLYPH_FADE_IN);
+        } else {
+          alpha =
+            clamp01((t - g.bornAt - GLYPH_DELAY) / GLYPH_FADE_IN) *
+            clamp01(1 - (t - g.fadeAt) / GLYPH_FADE_OUT);
+          if (alpha <= 0.001) continue; // finished; drop it
+        }
+        glyphs[write++] = g;
+        if (alpha > 0.001) out.push({ g, alpha });
+      }
+      glyphs.length = write;
+      return out;
+    },
+
     /** Screen-space rocket position and geometry, for the renderer. */
     get rocket() {
       const screen = rocketScreen();
@@ -689,6 +812,7 @@ export function createDirector(deps) {
       fuseEmberClock = 0;
       calmIndex = 0;
       calmAlpha = 0;
+      glyphs = [];
       surpriseGroups = [];
       lineGroups.line1 = [];
       lineGroups.line2 = [];
