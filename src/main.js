@@ -134,6 +134,44 @@ if (!canvasEl) {
 
   let armed = true;
 
+  /**
+   * Audio unlock, separate from ignition.
+   *
+   * Mobile browsers do not accept every gesture as permission to play sound.
+   * `pointerdown` — which is what lights the fuse, because it feels instant —
+   * is one they historically refuse: iOS Safari grants audio on `click` and
+   * `touchend`, not on `touchstart`. The result was that the first run played
+   * silently and everything worked from the "Watch again" button onwards,
+   * because that button is a real click and was the first gesture the browser
+   * would honour.
+   *
+   * So the unlock is attached to every gesture type, and keeps retrying until
+   * the context is genuinely `running`, at which point it detaches itself.
+   */
+  const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'];
+
+  function detachUnlock() {
+    for (const type of UNLOCK_EVENTS) {
+      window.removeEventListener(type, primeAudio, true);
+    }
+  }
+
+  function primeAudio() {
+    if (sound.isRunning()) {
+      detachUnlock();
+      return;
+    }
+    sound.initAudio().then((ok) => {
+      if (ok) detachUnlock();
+    });
+  }
+
+  for (const type of UNLOCK_EVENTS) {
+    // Capture phase, so the mute button's stopPropagation cannot hide a
+    // perfectly good unlock gesture from us.
+    window.addEventListener(type, primeAudio, true);
+  }
+
   function ignite() {
     if (!armed || director.state !== 'idle') return;
     armed = false;
@@ -145,7 +183,10 @@ if (!canvasEl) {
     // touches the cord, not to the tap — the timeline owns that cue. Playing
     // it here as well was also stacking two copies of the same voice, which
     // is what made it twice as loud as everything else.
-    sound.initAudio();
+    // Ask for audio here too, but do not judge the answer: a refusal on this
+    // gesture is expected on mobile, and `primeAudio` keeps trying on the
+    // gesture types the browser does honour.
+    primeAudio();
     director.start();
   }
 

@@ -56,6 +56,22 @@ let ctx = null;
 let master = null;
 let noiseBuffer = null;
 
+/**
+ * A looping silent HTML media element, used only to change iOS's audio
+ * session category.
+ *
+ * On iOS, Web Audio output is governed by the hardware ring/silent switch:
+ * with the switch flicked to silent the page is completely inaudible no matter
+ * how loud the recipes are or how high the volume is turned up. An
+ * AudioContext on its own cannot escape that. An HTMLAudioElement that is
+ * actually playing moves the page into the "playback" session category, which
+ * ignores the switch — so a fraction of a second of digital silence, looping,
+ * buys audible Web Audio for the rest of the visit.
+ *
+ * It must be started inside the same user gesture that creates the context.
+ */
+let silentEl = null;
+
 /** Set once we know audio can never work in this page. */
 let unavailable = false;
 
@@ -87,6 +103,86 @@ function num(value, fallback) {
 function audioContextCtor() {
   if (typeof window === 'undefined') return null;
   return window.AudioContext || window.webkitAudioContext || null;
+}
+
+/* ---------------------------------------------------------------
+   iOS audio session unlock
+   --------------------------------------------------------------- */
+
+/**
+ * Build a short mono 8-bit WAV of pure silence as a data URI.
+ *
+ * Generated rather than shipped as an asset so the project keeps its promise
+ * of having no audio files. 8-bit unsigned PCM puts silence at 128, not 0.
+ */
+function silentWavDataUri(seconds, rate) {
+  const sampleCount = Math.max(1, Math.floor(rate * seconds));
+  const total = 44 + sampleCount;
+  const bytes = new Uint8Array(total);
+  const view = new DataView(bytes.buffer);
+
+  const ascii = (offset, text) => {
+    for (let i = 0; i < text.length; i += 1) bytes[offset + i] = text.charCodeAt(i);
+  };
+
+  ascii(0, 'RIFF');
+  view.setUint32(4, total - 8, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true); // format: PCM
+  view.setUint16(22, 1, true); // channels: mono
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate, true); // byte rate (8-bit mono)
+  view.setUint16(32, 1, true); // block align
+  view.setUint16(34, 8, true); // bits per sample
+  ascii(36, 'data');
+  view.setUint32(40, sampleCount, true);
+  for (let i = 0; i < sampleCount; i += 1) bytes[44 + i] = 128;
+
+  let binary = '';
+  for (let i = 0; i < total; i += 1) binary += String.fromCharCode(bytes[i]);
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
+
+/**
+ * Start the silent loop. Safe to call repeatedly; must be called from inside
+ * the user gesture. Never muted and never at zero volume — a muted element
+ * does not move the session category, which is the entire point.
+ */
+function unlockMediaSession() {
+  try {
+    if (silentEl) {
+      const replay = silentEl.play();
+      if (replay && replay.catch) replay.catch(() => {});
+      return;
+    }
+    const el = document.createElement('audio');
+    el.setAttribute('playsinline', '');
+    el.setAttribute('aria-hidden', 'true');
+    el.loop = true;
+    el.preload = 'auto';
+    el.volume = 1;
+    el.src = silentWavDataUri(0.4, 8000);
+    // Attached, not detached: some engines will not treat a element that is
+    // outside the document as establishing a media session at all.
+    el.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none';
+    (document.body || document.documentElement).appendChild(el);
+    const started = el.play();
+    if (started && started.catch) started.catch(() => {});
+    silentEl = el;
+  } catch (err) {
+    /* no media element support; Web Audio may still work on its own */
+  }
+}
+
+/** Pause the silent loop — used while muted, so nothing holds the session. */
+function releaseMediaSession() {
+  try {
+    if (silentEl) silentEl.pause();
+  } catch (err) {
+    /* nothing to release */
+  }
 }
 
 /* ---------------------------------------------------------------
@@ -701,6 +797,11 @@ const RECIPES = {
 export async function initAudio() {
   if (unavailable) return false;
 
+  // First thing, synchronously, while the gesture is still live: claim the
+  // playback audio session. Everything below may await, and an await hands the
+  // gesture back.
+  if (!muted) unlockMediaSession();
+
   if (!ctx) {
     const Ctor = audioContextCtor();
     if (!Ctor) {
@@ -731,6 +832,18 @@ export async function initAudio() {
       }
       master.connect(output);
       noiseBuffer = buildNoiseBuffer();
+
+      // The other half of the iOS unlock: a context that has never played
+      // anything can stay effectively dormant, so push one silent sample
+      // through it immediately, inside the gesture.
+      try {
+        const primer = ctx.createBufferSource();
+        primer.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        primer.connect(ctx.destination);
+        primer.start(0);
+      } catch (err) {
+        /* priming is best-effort */
+      }
     } catch (err) {
       unavailable = true;
       ctx = null;
@@ -778,6 +891,30 @@ export function play(name, opts) {
     // A tab-switch can suspend the context mid-sequence. Nudge it, but only one
     // attempt at a time: a resume() blocked by the autoplay policy never
     // settles, so firing one per play() would pile up pending promises.
+    // A suspended context has a frozen clock. Anything scheduled against it
+    // lands on the same timestamp, so the whole backlog would fire in one
+    // blast the moment the browser lets it run. Nudge it awake and drop this
+    // sound instead — a missed cue is far better than a wall of noise.
+    if (ctx.state !== 'running') {
+      if (!resumePending) {
+        resumePending = true;
+        const pending = ctx.resume();
+        if (pending && typeof pending.then === 'function') {
+          pending.then(
+            () => {
+              resumePending = false;
+            },
+            () => {
+              resumePending = false;
+            }
+          );
+        } else {
+          resumePending = false;
+        }
+      }
+      return SILENT_HANDLE;
+    }
+
     if (ctx.state === 'suspended' && !resumePending) {
       resumePending = true;
       const resumed = ctx.resume();
@@ -827,6 +964,12 @@ export function setMuted(next) {
   const value = Boolean(next);
   muted = value;
 
+  // Hold the playback session only while we actually intend to make noise.
+  // Unmuting counts as a gesture, so this is also the natural retry point for
+  // anyone whose first tap did not manage to claim it.
+  if (value) releaseMediaSession();
+  else unlockMediaSession();
+
   if (unavailable || !ctx || !master) return;
 
   try {
@@ -845,6 +988,14 @@ export function setMuted(next) {
 /** @returns {boolean} current mute state, valid before and after init. */
 export function isMuted() {
   return muted;
+}
+
+/**
+ * @returns {boolean} true once the context exists and is actually running —
+ * i.e. the browser has genuinely granted audio, not merely been asked.
+ */
+export function isRunning() {
+  return !!ctx && ctx.state === 'running';
 }
 
 /** Fade out and release every sounding voice. The master stays connected. */
