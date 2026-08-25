@@ -204,6 +204,7 @@ export function createSetpiece(metrics, options = {}) {
   let burnSeconds = FUSE_BURN_SECONDS;
   let burnT = 0;
   let strikeT = 0;
+  let strikeTravel = STRIKE_TRAVEL;
   let burnDone = false;
 
   const demoOut = { a: 0, dx: 0, dy: 0 };
@@ -400,11 +401,14 @@ export function createSetpiece(metrics, options = {}) {
      * Light the fuse at its tip. The burn walks from the tip toward the
      * rocket base over `seconds`; the consumed portion stops being drawn.
      */
-    startFuseBurn(seconds = FUSE_BURN_SECONDS) {
+    startFuseBurn(seconds = FUSE_BURN_SECONDS, strikeSeconds = STRIKE_TRAVEL) {
       api.stopIdleDemo();
       // The match has to physically reach the fuse before it can light it, so
-      // the travel comes out of the same budget the burn was given.
-      burnSeconds = Math.max(0.3, seconds - STRIKE_TRAVEL);
+      // the travel comes out of the same budget the burn was given. The
+      // timeline owns the travel time, because the audio cue has to land on
+      // the same instant the cord catches.
+      strikeTravel = Math.max(0.05, strikeSeconds);
+      burnSeconds = Math.max(0.3, seconds - strikeTravel);
       burnT = 0;
       strikeT = 0;
       burnDone = false;
@@ -432,8 +436,8 @@ export function createSetpiece(metrics, options = {}) {
       time += dt;
       if (state === 'striking') {
         strikeT += dt;
-        if (strikeT >= STRIKE_TRAVEL) {
-          strikeT = STRIKE_TRAVEL;
+        if (strikeT >= strikeTravel) {
+          strikeT = strikeTravel;
           state = 'burning';
           burnT = 0;
         }
@@ -598,7 +602,7 @@ export function createSetpiece(metrics, options = {}) {
         let reach = 0;
         if (state === 'striking') {
           // Ease-out on the way in, so it arrives rather than slams.
-          const p = clamp01(strikeT / STRIKE_TRAVEL);
+          const p = clamp01(strikeT / strikeTravel);
           reach = 1 - (1 - p) * (1 - p);
         } else if (state === 'burning' || state === 'burnt') {
           const q = clamp01(burnT / STRIKE_RETREAT);

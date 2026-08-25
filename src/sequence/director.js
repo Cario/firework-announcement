@@ -390,7 +390,7 @@ export function createDirector(deps) {
 
     switch (kind) {
       case 'fuseIgnite':
-        setpiece.startFuseBurn(payload.duration);
+        setpiece.startFuseBurn(payload.duration, payload.catchAt);
         break;
 
       case 'liftoff':

@@ -229,30 +229,66 @@ function enforceCap(now) {
    --------------------------------------------------------------- */
 
 /**
- * fuse — looping noise through a bandpass at 2.8 kHz, Q 1.4, at gain 0.05,
- * held for the burn then ramped to silence at ignition.
+ * fuse — a burning cord: irregular sputtering, not a steady hiss.
+ *
+ * The first version of this was looping noise through a bandpass, which is the
+ * textbook recipe for wind or a jet — a smooth, sustained, unchanging tone.
+ * A fuse is the opposite: a rapid string of tiny random crackles at wildly
+ * uneven levels, with barely any sustained component at all. So this is
+ * granular. Roughly 55 grains a second, each a few milliseconds of noise
+ * through a highpass, with levels drawn from a skewed distribution so most are
+ * faint and the occasional one snaps. Underneath sits a very quiet bed just to
+ * stop the gaps between grains sounding like silence.
  */
 function makeFuse(startAt, gain, opts) {
-  const duration = Math.max(0.12, num(opts.duration, 1.4));
+  const duration = Math.max(0.12, num(opts.duration, 1.0));
   const endAt = startAt + duration;
-  const voice = newVoice(endAt + 0.04);
+  const voice = newVoice(endAt + 0.08);
 
-  const source = noiseSource(true);
+  // The sputter.
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 2400;
+  hp.connect(voice.out);
+
+  const grains = Math.max(6, Math.round(duration * 55));
+  for (let i = 0; i < grains; i += 1) {
+    // Jittered rather than evenly spaced — an even grid reads as a buzz.
+    const at = startAt + (i / grains) * duration + (Math.random() - 0.5) * (duration / grains);
+    if (at >= endAt) continue;
+    const length = 0.004 + Math.random() * 0.012;
+    // Squared random: mostly quiet, with occasional snaps.
+    const r = Math.random();
+    const peak = (0.035 + r * r * 0.22) * gain;
+
+    const source = noiseSource(false);
+    const level = ctx.createGain();
+    attackDecay(level.gain, at, peak, 0.001, at + length);
+
+    source.connect(level);
+    level.connect(hp);
+    source.start(at, noiseOffset(length + 0.02));
+    source.stop(at + length + 0.02);
+    voice.sources.push(source);
+  }
+
+  // A whisper of a bed so the gaps are not dead air.
+  const bed = noiseSource(true);
   const band = ctx.createBiquadFilter();
   band.type = 'bandpass';
-  band.frequency.value = 2800;
-  band.Q.value = 1.4;
+  band.frequency.value = 1600;
+  band.Q.value = 0.9;
 
-  const level = ctx.createGain();
-  attackHoldRelease(level.gain, startAt, 0.30 * gain, 0.06, endAt - 0.12, endAt);
+  const bedLevel = ctx.createGain();
+  attackHoldRelease(bedLevel.gain, startAt, 0.025 * gain, 0.04, endAt - 0.1, endAt);
 
-  source.connect(band);
-  band.connect(level);
-  level.connect(voice.out);
+  bed.connect(band);
+  band.connect(bedLevel);
+  bedLevel.connect(voice.out);
+  bed.start(startAt, noiseOffset(0));
+  bed.stop(endAt + 0.04);
+  voice.sources.push(bed);
 
-  source.start(startAt, noiseOffset(0));
-  source.stop(endAt + 0.03);
-  voice.sources.push(source);
   return voice;
 }
 
@@ -563,11 +599,88 @@ function makeWind(startAt, gain, opts) {
   return voice;
 }
 
+/**
+ * shellWhistle — the short rising note of a small shell going up, used for
+ * each word's rocket. Deliberately thin and quiet: a dozen of these fire
+ * across a single line, so anything fuller turns the line into a chorus.
+ */
+function makeShellWhistle(startAt, gain, opts) {
+  const duration = Math.max(0.15, num(opts.duration, 0.35));
+  const endAt = startAt + duration;
+  const voice = newVoice(endAt + 0.06);
+  const detune = 1 + (Math.random() * 0.3 - 0.15);
+
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(520 * detune, startAt);
+  osc.frequency.exponentialRampToValueAtTime(1180 * detune, endAt);
+
+  const level = ctx.createGain();
+  attackDecay(level.gain, startAt, 0.10 * gain, 0.05, endAt);
+
+  osc.connect(level);
+  level.connect(voice.out);
+  osc.start(startAt);
+  osc.stop(endAt + 0.04);
+
+  const air = noiseSource(false);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 2600;
+
+  const hiss = ctx.createGain();
+  attackDecay(hiss.gain, startAt, 0.05 * gain, 0.04, endAt);
+
+  air.connect(hp);
+  hp.connect(hiss);
+  hiss.connect(voice.out);
+  air.start(startAt, noiseOffset(duration + 0.05));
+  air.stop(endAt + 0.04);
+
+  voice.sources.push(osc, air);
+  return voice;
+}
+
+/**
+ * crackleLight — the tail of a small burst. Same idea as `crackle` but short
+ * and sparse, because one of these fires per word rather than once per show.
+ */
+function makeCrackleLight(startAt, gain) {
+  const spread = 0.45;
+  const grains = 7 + Math.floor(Math.random() * 5);
+  const endAt = startAt + spread + 0.05;
+  const voice = newVoice(endAt + 0.05);
+
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 3000;
+  hp.connect(voice.out);
+
+  for (let i = 0; i < grains; i += 1) {
+    const at = startAt + Math.random() * spread;
+    const length = 0.02 + Math.random() * 0.02;
+    const peak = (0.06 + Math.random() * 0.10) * gain;
+
+    const source = noiseSource(false);
+    const level = ctx.createGain();
+    attackDecay(level.gain, at, peak, 0.003, at + length);
+
+    source.connect(level);
+    level.connect(hp);
+    source.start(at, noiseOffset(length + 0.02));
+    source.stop(at + length + 0.02);
+    voice.sources.push(source);
+  }
+  return voice;
+}
+
 const RECIPES = {
   fuse: makeFuse,
   launch: makeLaunch,
   travel: makeTravel,
   wind: makeWind,
+  shellWhistle: makeShellWhistle,
+  crackleLight: makeCrackleLight,
   boom: makeBoom,
   crackle: makeCrackle,
   smallPop: makeSmallPop,

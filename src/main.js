@@ -140,7 +140,12 @@ if (!canvasEl) {
     // Audio has to be created inside the gesture, and must never be able to
     // hold up the visuals: `initAudio` always resolves, and the sequence
     // starts regardless of what it resolves to.
-    sound.initAudio().then(() => sound.play('fuse'));
+    //
+    // Nothing is played here. The fuse sound belongs to the moment the match
+    // touches the cord, not to the tap — the timeline owns that cue. Playing
+    // it here as well was also stacking two copies of the same voice, which
+    // is what made it twice as loud as everything else.
+    sound.initAudio();
     director.start();
   }
 

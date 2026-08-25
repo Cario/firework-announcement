@@ -26,11 +26,19 @@ export const RUNTIME_TOLERANCE = 0.5;
  * plan's 2.3 table — this object is the contract, the arrays below are
  * derived from it.
  */
+/**
+ * How long the match takes to reach the fuse after the tap. The set-piece
+ * animates the strike over this window, and the cord only catches at the end
+ * of it — so this is also when the fuse audio starts.
+ */
+export const FUSE_CATCH = 0.42;
+
 export const T = {
   TAP: 0.0,
 
-  // Fuse burns from the tip toward the rocket base; hiss audio.
+  // Match travels to the cord, then the fuse burns toward the rocket base.
   FUSE_START: 0.0,
+  FUSE_CATCH_AT: FUSE_CATCH,
   FUSE_END: 1.4,
 
   // Lift-off, launch whoosh, camera begins following.
@@ -181,6 +189,25 @@ export function planLine({ text, start, end, colorOffset = 0, kindPrefix = 'word
       payload: { word, index: i, color, duration: WORD_RESOLVE },
     });
 
+    // Every one of these is a firework and needs to sound like one. They had
+    // no audio at all: only the opening burst and the date line were ever
+    // scheduled, so three quarters of the show played out in silence.
+    events.push({
+      t: shellAt,
+      kind: 'sound',
+      payload: { name: 'shellWhistle', duration: SHELL_RISE, gain: 0.9 },
+    });
+    events.push({
+      t: burstAt,
+      kind: 'sound',
+      payload: { name: 'smallPop', gain: 0.85 },
+    });
+    events.push({
+      t: burstAt + 0.04,
+      kind: 'sound',
+      payload: { name: 'crackleLight', gain: 0.8 },
+    });
+
     return { word, index: i, color, shellAt, burstAt, readableAt };
   });
 
@@ -292,8 +319,19 @@ export function phaseAt(t) {
  */
 export const SCHEDULE = [
   // --- Fuse -----------------------------------------------------------
-  { t: T.FUSE_START, kind: 'fuseIgnite', payload: { duration: T.FUSE_END - T.FUSE_START } },
-  { t: T.FUSE_START, kind: 'sound', payload: { name: 'fuse' } },
+  {
+    t: T.FUSE_START,
+    kind: 'fuseIgnite',
+    payload: { duration: T.FUSE_END - T.FUSE_START, catchAt: FUSE_CATCH },
+  },
+  // Not on the tap — on contact. The match has to travel to the cord first,
+  // and the sound belongs to the moment it arrives. It ends at lift-off; the
+  // travel whistle carries the flight from there.
+  {
+    t: T.FUSE_CATCH_AT,
+    kind: 'sound',
+    payload: { name: 'fuse', duration: T.FUSE_END - T.FUSE_CATCH_AT },
+  },
 
   // --- Launch ---------------------------------------------------------
   { t: T.LIFTOFF, kind: 'liftoff', payload: { duration: T.CLIMB_END - T.LIFTOFF } },
