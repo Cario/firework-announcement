@@ -1,0 +1,20 @@
+{
+  "name": "nikkah-invite",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Single-page nikkah announcement: tap a fuse, watch a firework write the invitation across the night sky.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:single": "vite build --mode single"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "vite": "^8.2.2",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}
