@@ -115,7 +115,10 @@ let sampleCtx = null;
 function getSampleCtx(w, h) {
   if (!sampleCanvas) {
     sampleCanvas = document.createElement('canvas');
-    sampleCtx = sampleCanvas.getContext('2d');
+    // Every glyph sampled here is immediately read back with getImageData, so
+    // tell the browser not to put this canvas on the GPU — reading back from
+    // GPU memory is the slow path, and Chrome warns about it by name.
+    sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
   }
   // Assigning width/height also clears the surface, which is required — a
   // previous, wider sample would otherwise leave ink in the margins.
