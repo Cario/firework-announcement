@@ -63,6 +63,25 @@ const FUSE_EMBER_MAX = 10;
 /** Seconds between fuse ember puffs. */
 const FUSE_EMBER_INTERVAL = 0.055;
 
+/* ------------------------------------------------------------------ *
+ * Reduced motion
+ * ------------------------------------------------------------------ */
+
+/** Fade-in, hold and fade-out for one line of the calm sequence. */
+const CALM_FADE_IN = 1.1;
+const CALM_HOLD = 1.5;
+const CALM_FADE_OUT = 0.7;
+const CALM_STEP = CALM_FADE_IN + CALM_HOLD + CALM_FADE_OUT;
+
+/** True when the viewer has asked their system for less animation. */
+function prefersReducedMotion() {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Build the director.
  *
@@ -108,6 +127,18 @@ export function createDirector(deps) {
   let stickLength = 0;
 
   let fuseEmberClock = 0;
+
+  // Reduced-motion path: the same words, delivered calmly.
+  const reduced = prefersReducedMotion();
+  const calmLines = [
+    { text: CONTENT.surprise, size: 0.09, italic: false },
+    { text: CONTENT.lines[0], size: 0.052, italic: true },
+    { text: CONTENT.lines[1], size: 0.046, italic: true },
+    { text: CONTENT.lines[2], size: 0.046, italic: true },
+    { text: `${CONTENT.dateLine} — ${CONTENT.locationLine}`, size: 0.044, italic: false },
+  ];
+  let calmIndex = 0;
+  let calmAlpha = 0;
 
   // Text groups, so each line can be dispersed as a unit.
   let surpriseGroups = [];
@@ -455,7 +486,36 @@ export function createDirector(deps) {
    * Frame
    * ------------------------------------------------------------------ */
 
+  /**
+   * The reduced-motion sequence: no flight, no bursts, no camera move. Each
+   * line simply fades up, holds long enough to read, and fades away, then the
+   * card arrives. Same words, same order, none of the motion.
+   */
+  function calmStep(dt) {
+    t += dt;
+
+    const index = Math.floor(t / CALM_STEP);
+    if (index >= calmLines.length) {
+      calmAlpha = 0;
+      if (!finishedFired) finish();
+      return;
+    }
+
+    calmIndex = index;
+    const local = t - index * CALM_STEP;
+    if (local < CALM_FADE_IN) calmAlpha = local / CALM_FADE_IN;
+    else if (local < CALM_FADE_IN + CALM_HOLD) calmAlpha = 1;
+    else calmAlpha = clamp01(1 - (local - CALM_FADE_IN - CALM_HOLD) / CALM_FADE_OUT);
+
+    phase = 'calm';
+  }
+
   function step(dt) {
+    if (reduced) {
+      calmStep(dt);
+      return;
+    }
+
     const from = t;
     t += dt;
 
@@ -520,6 +580,22 @@ export function createDirector(deps) {
       return failed;
     },
 
+    /** True when the viewer asked for less motion, so the renderer draws text. */
+    get reducedMotion() {
+      return reduced;
+    },
+
+    /**
+     * The line the calm sequence is currently showing, or null. `size` is a
+     * fraction of the viewport width so the renderer can pick a font size.
+     */
+    get calmLine() {
+      if (!reduced || state !== 'running' || calmAlpha <= 0.001) return null;
+      const line = calmLines[calmIndex];
+      if (!line) return null;
+      return { text: line.text, italic: line.italic, size: line.size, alpha: calmAlpha };
+    },
+
     /** Screen-space rocket position and geometry, for the renderer. */
     get rocket() {
       const screen = rocketScreen();
@@ -579,6 +655,8 @@ export function createDirector(deps) {
       finishedFired = false;
       failed = false;
       fuseEmberClock = 0;
+      calmIndex = 0;
+      calmAlpha = 0;
       surpriseGroups = [];
       lineGroups.line1 = [];
       lineGroups.line2 = [];

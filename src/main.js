@@ -11,6 +11,7 @@ import { createClouds } from './scene/clouds.js';
 import { createSetpiece } from './scene/setpiece.js';
 import { drawRocket } from './scene/rocket.js';
 
+import { PALETTE } from './config/palette.js';
 import { createParticles, particleCap } from './fx/particles.js';
 import { createTrail } from './fx/trail.js';
 
@@ -154,6 +155,44 @@ if (!canvasEl) {
    * Frame
    * ---------------------------------------------------------------- */
 
+  /**
+   * Reduced-motion text. Wrapped to the viewport and drawn plainly, with none
+   * of the spark choreography — the words still have to arrive.
+   */
+  function drawCalmLine(line) {
+    if (!line) return;
+
+    const size = Math.max(19, Math.min(64, view.width * line.size));
+    ctx.save();
+    ctx.globalAlpha = line.alpha;
+    ctx.fillStyle = PALETTE.goldHi;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${line.italic ? 'italic ' : ''}600 ${size}px "Cormorant Garamond", Georgia, serif`;
+
+    const maxWidth = view.width * 0.86;
+    const words = line.text.split(' ');
+    const rows = [];
+    let current = '';
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && ctx.measureText(candidate).width > maxWidth) {
+        rows.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) rows.push(current);
+
+    const pitch = size * 1.4;
+    const top = view.height / 2 - ((rows.length - 1) * pitch) / 2;
+    for (let i = 0; i < rows.length; i += 1) {
+      ctx.fillText(rows[i], view.width / 2, top + i * pitch);
+    }
+    ctx.restore();
+  }
+
   function render(dt) {
     director.update(dt);
 
@@ -167,6 +206,12 @@ if (!canvasEl) {
     clouds.draw(ctx, camera, 'behind');
     ground.draw(ctx, camera);
     setpiece.draw(ctx, camera);
+
+    if (director.reducedMotion) {
+      clouds.draw(ctx, camera, 'front');
+      drawCalmLine(director.calmLine);
+      return;
+    }
 
     if (director.flying) {
       // Mid-flight: smoke < embers < flame < rocket, all inside the cloud
