@@ -169,3 +169,101 @@ body {
   font-size: clamp(14px, 3.6vw, 16px);
   margin-top: 6px;
 }
+
+/* ---------------------------------------------------------------
+   Phase 4 — mute toggle
+
+   `src/config/palette.js` was still a stub when this was written, so the three
+   tokens this control needs are declared here from the spec's palette table.
+   If a later phase declares the same tokens at :root the values are identical,
+   so the duplicate is harmless.
+   --------------------------------------------------------------- */
+
+:root {
+  --night-0: #0a1230;
+  --gold: #f0c25e;
+  --gold-hi: #fbe6ab;
+  /* night-0 at 62% — a translucent ground for the toggle. Written as rgba
+     rather than a second `background` declaration, because the CSS minifier
+     collapses back-to-back duplicate properties and would drop the fallback. */
+  --mute-ground: rgba(10, 18, 48, 0.62);
+  --mute-ground-hover: rgba(10, 18, 48, 0.82);
+}
+
+/* Absolutely positioned inside #stage rather than `position: fixed`: fixed
+   positioning is unreliable inside the artifact preview iframe, and the stage
+   already fills the viewport. */
+.mute-toggle {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  z-index: 30;
+
+  /* Accessibility floor: 44 x 44 px hit area. */
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border: 1.5px solid var(--gold);
+  border-radius: 50%;
+  background-color: var(--mute-ground);
+  color: var(--gold-hi);
+
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 160ms ease, border-color 160ms ease,
+    color 160ms ease;
+}
+
+.mute-toggle:hover {
+  background-color: var(--mute-ground-hover);
+  border-color: var(--gold-hi);
+}
+
+.mute-toggle:active {
+  background-color: var(--mute-ground-hover);
+}
+
+.mute-toggle:focus-visible {
+  outline: 3px solid var(--gold-hi);
+  outline-offset: 3px;
+}
+
+.mute-toggle__icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+/* Unmuted (aria-pressed="false") shows the speaker-on icon; muted shows the
+   crossed-out one. Driven entirely by the ARIA state so the two can never
+   disagree. */
+.mute-toggle__icon--off {
+  display: none;
+}
+
+.mute-toggle[aria-pressed='true'] {
+  color: var(--gold);
+}
+
+.mute-toggle[aria-pressed='true'] .mute-toggle__icon--on {
+  display: none;
+}
+
+.mute-toggle[aria-pressed='true'] .mute-toggle__icon--off {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mute-toggle {
+    transition: none;
+  }
+}
