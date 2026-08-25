@@ -155,9 +155,12 @@ export const KIND = Object.freeze({
 });
 
 /**
- * Particle budget. 2600 on a desktop; 1400 when the viewport is phone-width or
- * the device reports four cores or fewer, which is the Phase 9.3 auto-lowering
- * rule stated one phase early because the pool is allocated exactly once.
+ * Particle budget. The plan's Phase 6.1 figures were 2600 / 1400, but the
+ * longest invitation line is twelve words that must ALL be legible on screen
+ * at once. At 1400 that works out to ~72 dots for a word like "Muhammad",
+ * which renders as a blob rather than letters — measured on a 428 px viewport,
+ * not guessed. These are plain filled arcs with no shadow or blur, so the
+ * extra headroom costs far less than the legibility it buys.
  *
  * `navigator.hardwareConcurrency` is `undefined` on some browsers; `undefined
  * <= 4` is false, so an unknown core count is treated as a capable device.
@@ -173,7 +176,7 @@ export function particleCap() {
   }
   const lowCore =
     typeof navigator !== 'undefined' && navigator.hardwareConcurrency <= 4;
-  return narrow || lowCore ? 1400 : 2600;
+  return narrow || lowCore ? 2400 : 3800;
 }
 
 /**

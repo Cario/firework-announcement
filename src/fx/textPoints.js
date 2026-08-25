@@ -58,7 +58,12 @@ const ROW_WIDTH_FRACTION = 0.88;
 const FONT_MIN = 18;
 const FONT_MAX = 46;
 const FONT_VW = 0.046;
-const LINE_HEIGHT = 1.25;
+/**
+ * Row pitch. Generous on purpose: the words are scattered off their baseline
+ * by the altitude jitter below, and at 1.25 an ascender from one row lands in
+ * the descenders of the one above it — measured, not theorised.
+ */
+const LINE_HEIGHT = 1.62;
 
 /** Vertical jitter per word, as a fraction of viewport height (plan 6.5). */
 const ALTITUDE_JITTER = 0.06;
@@ -719,9 +724,12 @@ export function layoutLine(words, viewport, options) {
   // top of each other — rendered and screenshotted, it is unreadable. Capping
   // the amplitude at 30% of the row pitch keeps the "shells at different
   // altitudes" read within a row while guaranteeing rows never collide.
+  // 0.3 of the pitch still let an ascender reach the row above once the taller
+  // 1.62 pitch was in place; 0.18 leaves roughly a full glyph height of clear
+  // air between rows at every size that was screenshotted.
   const jitterAmount =
     rowCount > 1
-      ? Math.min(vh * ALTITUDE_JITTER, lineHeight * 0.3)
+      ? Math.min(vh * ALTITUDE_JITTER, lineHeight * 0.18)
       : vh * ALTITUDE_JITTER;
 
   const rows = [];

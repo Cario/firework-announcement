@@ -1,0 +1,273 @@
+/* ---------------------------------------------------------------
+   Phase 8 — the invitation card and the replay control.
+
+   Every style for the card and the "Watch again" button lives here;
+   `src/ui/inviteCard.js` imports this file so the two travel together
+   and `src/style.css` stays untouched.
+
+   Colour tokens are declared on `.invite-layer` (not `:root`) so they
+   cannot collide with the `--gold-hi` / `--night-0` that style.css
+   already declares globally for the mute toggle and the prompt pill.
+   The values below are the spec's palette table verbatim; at runtime
+   inviteCard.js re-sets each one from `PALETTE` via
+   `style.setProperty`, so `src/config/palette.js` stays the single
+   source of truth and these literals are only the standalone default.
+   (CSS cannot import the JS module, which is why they are written out.)
+
+   Source: docs/specs/2026-08-25-nikkah-invite-design.md § "Art direction"
+           docs/plans/01-implementation-plan.md § Phase 8
+   --------------------------------------------------------------- */
+
+.invite-layer {
+  --card-bg: #fbf6e9;
+  --card-ink: #241d10;
+  --card-rule: #d8c793;
+  --card-gold: #f0c25e;
+  --card-gold-hi: #fbe6ab;
+  --card-night-0: #0a1230;
+
+  /* The scrim. A flat colour layer — deliberately NOT a blur and NOT a
+     gradient — so the parchment holds against whatever the sky is doing
+     behind it. Value fixed by the plan: rgba(6, 9, 22, 0.45). */
+  --card-scrim: rgba(6, 9, 22, 0.45);
+
+  --card-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --card-sans: 'Jost', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* easeOutCubic, matching src/engine/easing.js. 900 ms entrance. */
+  --card-ease: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --card-enter: 900ms;
+
+  /* Absolutely positioned inside the relative #stage, never `fixed`:
+     fixed positioning is unreliable inside the artifact preview iframe.
+     z-index 25 sits above the prompt pill (20) and below the mute
+     toggle (30), so sound stays controllable while the card is up. */
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* Notched phones: keep the card clear of the cutouts. */
+  padding: calc(16px + env(safe-area-inset-top, 0px))
+    calc(14px + env(safe-area-inset-right, 0px))
+    calc(16px + env(safe-area-inset-bottom, 0px))
+    calc(14px + env(safe-area-inset-left, 0px));
+
+  /* The page itself never scrolls; if anything has to scroll it is the
+     card, below. */
+  overflow: hidden;
+
+  opacity: 0;
+  transition: opacity var(--card-enter) var(--card-ease);
+}
+
+/* Must out-specify the `display: flex` above. */
+.invite-layer[hidden] {
+  display: none;
+}
+
+.invite-layer--in {
+  opacity: 1;
+}
+
+.invite-scrim {
+  position: absolute;
+  inset: 0;
+  background-color: var(--card-scrim);
+}
+
+/* Card + button move together as one block: the card's 14px rise reads
+   as the whole invitation settling into place. */
+.invite-panel {
+  position: relative;
+  z-index: 1;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+
+  width: 100%;
+  max-width: 30rem;
+  max-height: 100%;
+  min-height: 0;
+
+  transform: translateY(14px);
+  transition: transform var(--card-enter) var(--card-ease);
+}
+
+.invite-layer--in .invite-panel {
+  transform: translateY(0);
+}
+
+.invite-card {
+  width: 100%;
+  min-height: 0;
+
+  /* Short landscape phones: the card scrolls inside itself rather than
+     pushing the replay button off-screen or scrolling the body. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  padding: clamp(22px, 5.6vw, 40px) clamp(18px, 5vw, 34px);
+
+  border: 1px solid var(--card-rule); /* hairline */
+  border-radius: 12px;
+  background-color: var(--card-bg);
+  color: var(--card-ink);
+
+  text-align: center;
+  overflow-wrap: break-word;
+}
+
+/* ---------------------------------------------------------------
+   Type — storyboard frame 5.
+   All text is --card-ink on --card-bg: 15.47:1, clearing the 7:1
+   floor in Phase 9.2 with room to spare. (The storyboard tints the
+   secondary lines --card-sub #6b5f3e, which is only 5.84:1 on this
+   parchment and would miss that floor, so hierarchy here comes from
+   size, weight and italics instead of from colour.)
+   --------------------------------------------------------------- */
+
+.invite-eyebrow {
+  font-family: var(--card-sans);
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.invite-intro {
+  font-family: var(--card-serif);
+  font-weight: 600;
+  font-size: clamp(26px, 5.2vw, 34px);
+  line-height: 1.22;
+  margin: 14px 0 18px;
+  text-wrap: balance;
+}
+
+.invite-name {
+  font-family: var(--card-serif);
+  font-weight: 600;
+  font-style: italic;
+  font-size: clamp(20px, 4.4vw, 26px);
+  line-height: 1.24;
+}
+
+.invite-parents,
+.invite-location {
+  font-family: var(--card-sans);
+  font-weight: 400;
+  font-size: clamp(13px, 3.2vw, 15px);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+.invite-date {
+  font-family: var(--card-sans);
+  font-weight: 500;
+  font-size: clamp(13px, 3.2vw, 15px);
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+}
+
+.invite-rule {
+  width: 64px;
+  height: 0;
+  margin: 18px auto;
+  border: 0;
+  border-top: 1px solid var(--card-rule);
+}
+
+/* ---------------------------------------------------------------
+   Replay — a real <button>, so Enter and Space work for free.
+   44px minimum height is the accessibility floor.
+   --------------------------------------------------------------- */
+
+.invite-replay {
+  flex: 0 0 auto;
+
+  min-height: 44px;
+  padding: 11px 30px;
+
+  border: 0;
+  border-radius: 24px;
+  background-color: var(--card-gold-hi);
+  color: var(--card-night-0);
+
+  font-family: var(--card-sans);
+  font-weight: 500;
+  font-size: clamp(14px, 2.1vw, 17px);
+  line-height: 1.2;
+
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 160ms ease;
+}
+
+.invite-replay:hover {
+  background-color: var(--card-gold);
+}
+
+.invite-replay:active {
+  background-color: var(--card-gold);
+}
+
+/* Gold ring with a 3px gap, so it lands on the dark scrim rather than
+   on the button's own gold and stays plainly visible. Mirrors the
+   focus treatment on `.mute-toggle` in style.css. */
+.invite-replay:focus-visible {
+  outline: 3px solid var(--card-gold-hi);
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------
+   Short viewports — landscape phones. Tighten the vertical rhythm
+   before falling back to scrolling the card.
+   --------------------------------------------------------------- */
+
+@media (max-height: 520px) {
+  .invite-layer {
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .invite-panel {
+    gap: 10px;
+  }
+
+  .invite-card {
+    padding: 18px clamp(16px, 5vw, 28px);
+  }
+
+  .invite-intro {
+    margin: 10px 0 12px;
+  }
+
+  .invite-rule {
+    margin: 12px auto;
+  }
+}
+
+/* ---------------------------------------------------------------
+   Reduced motion — the fade stays (it carries no motion), the 14px
+   rise is skipped.
+   --------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .invite-panel,
+  .invite-layer--in .invite-panel {
+    transform: none;
+    transition: none;
+  }
+
+  .invite-replay {
+    transition: none;
+  }
+}
