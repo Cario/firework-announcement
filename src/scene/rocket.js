@@ -59,17 +59,44 @@ export const ROCKET = {
 let bodyGradient = null;
 let bodyGradientCtx = null;
 
-function getBodyGradient(ctx) {
-  if (bodyGradient && bodyGradientCtx === ctx) return bodyGradient;
-  // Plan 3.4: horizontal red-lo -> red (42%) -> red-hi (60%) -> red-lo, which
-  // is what makes a flat rectangle read as a cylinder.
+/**
+ * Rocket colourways. The English firework keeps the original red; the Urdu one
+ * is the same rocket in cobalt, so the two read as a matched pair on the
+ * ground — a choice between two identical fireworks, not two different props.
+ */
+export const LIVERY = Object.freeze({
+  red: Object.freeze({
+    lo: PALETTE.redLo,
+    mid: PALETTE.red,
+    hi: PALETTE.redHi,
+    nose: PALETTE.redHi,
+  }),
+  blue: Object.freeze({
+    lo: PALETTE.rocketBlueLo,
+    mid: PALETTE.rocketBlue,
+    hi: PALETTE.rocketBlueHi,
+    nose: PALETTE.rocketBlueHi,
+  }),
+});
+
+/**
+ * Gradients are cached per (context, livery). They are built in LOCAL
+ * coordinates and canvas applies the current transform at paint time, so one
+ * gradient per colourway serves every position, scale and rotation.
+ */
+function getBodyGradient(ctx, livery) {
+  if (bodyGradient && bodyGradientCtx === ctx && bodyGradient.livery === livery) {
+    return bodyGradient.gradient;
+  }
+  // Plan 3.4: horizontal lo -> mid (42%) -> hi (60%) -> lo, which is what
+  // makes a flat rectangle read as a cylinder.
   const half = ROCKET.bodyWidth / 2;
   const g = ctx.createLinearGradient(-half, 0, half, 0);
-  g.addColorStop(0, PALETTE.redLo);
-  g.addColorStop(0.42, PALETTE.red);
-  g.addColorStop(0.6, PALETTE.redHi);
-  g.addColorStop(1, PALETTE.redLo);
-  bodyGradient = g;
+  g.addColorStop(0, livery.lo);
+  g.addColorStop(0.42, livery.mid);
+  g.addColorStop(0.6, livery.hi);
+  g.addColorStop(1, livery.lo);
+  bodyGradient = { gradient: g, livery };
   bodyGradientCtx = ctx;
   return g;
 }
@@ -82,10 +109,11 @@ function getBodyGradient(ctx) {
  * @param {number} y  world/screen y of the body-base centre
  * @param {number} [scale=1]
  * @param {number} [angle=0] radians, clockwise, about (x, y)
- * @param {{ stickLength?: number }} [options]
+ * @param {{ stickLength?: number, livery?: object }} [options]
  */
 export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   const stickLength = options.stickLength ?? ROCKET.stickLength;
+  const livery = options.livery || LIVERY.red;
 
   const halfBody = ROCKET.bodyWidth / 2;
   const bodyTop = -ROCKET.bodyHeight;
@@ -108,7 +136,7 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
 
   // --- Fins -------------------------------------------------------------
   // Drawn before the body so their inset roots disappear underneath it.
-  ctx.fillStyle = PALETTE.redLo;
+  ctx.fillStyle = livery.lo;
   ctx.beginPath();
   ctx.moveTo(-finRootX, -ROCKET.finHeight);
   ctx.lineTo(-finRootX, 0);
@@ -124,7 +152,7 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   ctx.fill();
 
   // --- Body -------------------------------------------------------------
-  ctx.fillStyle = getBodyGradient(ctx);
+  ctx.fillStyle = getBodyGradient(ctx, livery);
   ctx.fillRect(-halfBody, bodyTop, ROCKET.bodyWidth, ROCKET.bodyHeight);
 
   // --- Gold bands -------------------------------------------------------
@@ -144,7 +172,7 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   // Base half a pixel inside the body top: flush, with no seam at any dpr.
   const noseBaseY = bodyTop + 0.5;
   const halfNose = ROCKET.noseWidth / 2;
-  ctx.fillStyle = PALETTE.redHi;
+  ctx.fillStyle = livery.nose;
   ctx.beginPath();
   ctx.moveTo(0, bodyTop - ROCKET.noseHeight);
   ctx.lineTo(halfNose, noseBaseY);

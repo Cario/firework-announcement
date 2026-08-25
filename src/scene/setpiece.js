@@ -20,14 +20,28 @@
 import { PALETTE } from '../config/palette.js';
 import { createRng, SEEDS } from '../engine/rng.js';
 import { easeInOutCubic, easeOutCubic, clamp01 } from '../engine/easing.js';
-import { drawRocket, ROCKET } from './rocket.js';
+import { drawRocket, ROCKET, LIVERY } from './rocket.js';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 
-/** The storyboard's set-piece box. All local coordinates are inside this. */
-export const SETPIECE_WIDTH = 340;
+/**
+ * The storyboard's box describes ONE station: a rocket, its fuse, and its
+ * match. The site now stands two of them side by side — red for English,
+ * cobalt for Urdu — and lighting one is how the viewer picks their language.
+ * Every local coordinate below is inside a single station's box; a station's
+ * `offset` shifts it into place.
+ */
+export const STATION_WIDTH = 340;
+export const STATION_GAP = 28;
+export const SETPIECE_WIDTH = STATION_WIDTH * 2 + STATION_GAP;
 export const SETPIECE_HEIGHT = 180;
+
+/** The two fireworks, left to right. `id` is the language they choose. */
+export const STATION_DEFS = Object.freeze([
+  Object.freeze({ id: 'en', offset: 0, livery: 'red' }),
+  Object.freeze({ id: 'ur', offset: STATION_WIDTH + STATION_GAP, livery: 'blue' }),
+]);
 
 /** Bottom of the box, as a fraction of the view height above the frame edge. */
 const BOTTOM_RATIO = 0.08;
@@ -189,54 +203,69 @@ export function createSetpiece(metrics, options = {}) {
   let originX = 0;
   let originY = 0;
 
-  /** Fuse path in WORLD coordinates, index 0 = unlit tip, last = rocket base. */
-  let fusePath = [];
-  /** The 14-spark flash, in local units relative to FLASH.x / FLASH.y. */
-  let flashSparks = [];
-
   let flameGradient = null;
   let flameGradientCtx = null;
 
+  /** Shared clock: both stations pulse and flicker together. */
   let time = 0;
-  let demoRunning = true;
-  let rocketVisible = true;
-  let state = 'idle';
-  let burnSeconds = FUSE_BURN_SECONDS;
-  let burnT = 0;
-  let strikeT = 0;
-  let strikeTravel = STRIKE_TRAVEL;
-  let burnDone = false;
 
+  /**
+   * Which station the viewer lit. Null until they choose. Every singular
+   * getter below delegates to it, so the director never has to know that
+   * there is more than one firework on the ground.
+   */
+  let chosenId = null;
+
+  /** Per-station state. Everything that burns, strikes or hides lives here. */
+  const stations = STATION_DEFS.map((def) => ({
+    id: def.id,
+    offset: def.offset,
+    livery: LIVERY[def.livery],
+    fusePath: [],
+    state: 'idle',
+    burnSeconds: FUSE_BURN_SECONDS,
+    burnT: 0,
+    strikeT: 0,
+    strikeTravel: STRIKE_TRAVEL,
+    burnDone: false,
+    demoRunning: true,
+    rocketVisible: true,
+  }));
+
+  const byId = (id) => stations.find((st) => st.id === id) || stations[0];
+  const chosen = () => (chosenId ? byId(chosenId) : stations[0]);
+
+  let flashSparks = [];
   const demoOut = { a: 0, dx: 0, dy: 0 };
   const flashOut = { a: 0 };
 
   function layout() {
     scale = m.setpieceScale;
     // Bottom-centre anchored, exactly like the storyboard's
-    // `left:50%; bottom:8%; transform:translateX(-50%) scale(s)` with
-    // `transform-origin: bottom center`.
+    // left:50%; bottom:8%; translateX(-50%) scale(s), origin bottom centre.
     originX = m.viewWidth / 2 - (SETPIECE_WIDTH / 2) * scale;
     originY =
       m.worldBottom - m.viewHeight * BOTTOM_RATIO - SETPIECE_HEIGHT * scale;
   }
 
-  function toWorldX(lx) {
-    return originX + lx * scale;
+  /** Station-local x -> world x. */
+  function toWorldX(lx, st) {
+    return originX + ((st ? st.offset : 0) + lx) * scale;
   }
 
   function toWorldY(ly) {
     return originY + ly * scale;
   }
 
-  function buildFuse() {
-    fusePath = new Array(FUSE_SAMPLES);
+  function buildFuse(st) {
+    st.fusePath = new Array(FUSE_SAMPLES);
     for (let i = 0; i < FUSE_SAMPLES; i++) {
       // Tip first: t walks from 1 (the tip) back to 0 (the rocket base), so
       // index 0 is where the flame starts and the burn simply consumes the
       // front of the array.
       const t = 1 - i / (FUSE_SAMPLES - 1);
-      fusePath[i] = {
-        x: toWorldX(bezier(FUSE.x0, FUSE.c1x, FUSE.c2x, FUSE.x1, t)),
+      st.fusePath[i] = {
+        x: toWorldX(bezier(FUSE.x0, FUSE.c1x, FUSE.c2x, FUSE.x1, t), st),
         y: toWorldY(bezier(FUSE.y0, FUSE.c1y, FUSE.c2y, FUSE.y1, t)),
       };
     }
@@ -267,7 +296,7 @@ export function createSetpiece(metrics, options = {}) {
 
   function build() {
     layout();
-    buildFuse();
+    for (const st of stations) buildFuse(st);
     buildFlash();
     flameGradient = null;
   }
@@ -291,10 +320,10 @@ export function createSetpiece(metrics, options = {}) {
    * space. The pivot is the left end of the stick, which is also where the
    * head and its flame live.
    */
-  function drawMatch(ctx, ctxAlpha, localX, localY, flick) {
+  function drawMatch(ctx, ctxAlpha, localX, localY, flick, st) {
     ctx.save();
     ctx.globalAlpha = ctxAlpha;
-    ctx.translate(toWorldX(localX), toWorldY(localY));
+    ctx.translate(toWorldX(localX, st), toWorldY(localY));
     ctx.rotate(MATCH.angle);
     ctx.scale(scale, scale);
 
@@ -337,41 +366,192 @@ export function createSetpiece(metrics, options = {}) {
     ctx.restore();
   }
 
+  /** Burn progress for one station, 0 unlit to 1 fully consumed. */
+  function burnProgressOf(st) {
+    // 'launched' has to count as fully burnt. Falling back to 0 here is what
+    // made the whole fuse reappear on the ground the instant the rocket left:
+    // the burn had finished, but the state had moved on past it.
+    if (st.state === 'launched') return 1;
+    return st.state === 'burning' || st.state === 'burnt'
+      ? clamp01(st.burnT / st.burnSeconds)
+      : 0;
+  }
+
+  /** Draw one whole station: fuse, rocket, tip, ring, ghost demo, match. */
+  function drawStation(ctx, st) {
+    // --- Fuse ------------------------------------------------------------
+    // Drawn from the burn head to the rocket base; the burnt portion in
+    // front of the head is simply not drawn.
+    const progress = burnProgressOf(st);
+    const last = st.fusePath.length - 1;
+    const startIdx = Math.min(last, Math.floor(progress * last));
+    if (startIdx < last) {
+      ctx.strokeStyle = PALETTE.fuse;
+      ctx.lineWidth = FUSE.width * scale;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(st.fusePath[startIdx].x, st.fusePath[startIdx].y);
+      for (let i = startIdx + 1; i <= last; i++) {
+        ctx.lineTo(st.fusePath[i].x, st.fusePath[i].y);
+      }
+      ctx.stroke();
+    }
+
+    // --- Rocket ------------------------------------------------------------
+    if (st.rocketVisible) {
+      drawRocket(
+        ctx,
+        toWorldX(ROCKET_LOCAL.x, st),
+        toWorldY(ROCKET_LOCAL.y),
+        scale,
+        0,
+        { stickLength: ROCKET_LOCAL.stick, livery: st.livery }
+      );
+    }
+
+    // --- Unlit fuse tip ----------------------------------------------------
+    // Still unlit while the match is on its way over.
+    if (st.state === 'idle' || st.state === 'armed' || st.state === 'striking') {
+      ctx.fillStyle = PALETTE.fuse;
+      ctx.beginPath();
+      ctx.arc(toWorldX(TIP.x, st), toWorldY(TIP.y), TIP.r * scale, 0, TAU);
+      ctx.fill();
+    }
+
+    // --- Pulsing ring on the fuse tip --------------------------------------
+    if (st.demoRunning) {
+      const u = (time % RING.period) / RING.period;
+      const cx = toWorldX(RING.x, st);
+      const cy = toWorldY(RING.y);
+      const r = RING.radius * scale;
+
+      // 8% gold ground inside the ring.
+      ctx.globalAlpha = RING.fillAlpha;
+      ctx.fillStyle = PALETTE.gold;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, TAU);
+      ctx.fill();
+
+      // The ring itself, brightening toward gold-hi at the peak.
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = RING.width * scale;
+      ctx.strokeStyle = PALETTE.gold;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - (RING.width / 2) * scale, 0, TAU);
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.5 - 0.5 * Math.cos(u * TAU);
+      ctx.strokeStyle = PALETTE.goldHi;
+      ctx.stroke();
+
+      // Expanding halo, 13 px, fading out. Crisp ring, no blur, no glow.
+      const spread = RING.halo * easeOutCubic(u) * scale;
+      if (spread > 0.5) {
+        ctx.globalAlpha = RING.haloAlpha * (1 - u);
+        ctx.strokeStyle = PALETTE.gold;
+        ctx.lineWidth = spread;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r + spread / 2, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // --- Ghost demo ---------------------------------------------------------
+    if (st.demoRunning) {
+      const u = (time % DEMO_PERIOD) / DEMO_PERIOD;
+
+      // The flash at the tip, during the hold.
+      sampleTrack(FLASH_KEYS, u, flashOut);
+      if (flashOut.a > 0.01) {
+        const fx = toWorldX(FLASH.x, st);
+        const fy = toWorldY(FLASH.y);
+        ctx.lineWidth = 1.5 * scale;
+        ctx.lineCap = 'butt';
+        for (let i = 0; i < flashSparks.length; i++) {
+          const sp = flashSparks[i];
+          ctx.globalAlpha = flashOut.a * 0.26;
+          ctx.strokeStyle = sp.colour;
+          ctx.beginPath();
+          ctx.moveTo(fx + sp.ix * scale, fy + sp.iy * scale);
+          ctx.lineTo(fx + sp.ox * scale, fy + sp.oy * scale);
+          ctx.stroke();
+
+          ctx.globalAlpha = flashOut.a * sp.alpha;
+          ctx.fillStyle = sp.colour;
+          ctx.beginPath();
+          ctx.arc(fx + sp.ox * scale, fy + sp.oy * scale, sp.size * scale, 0, TAU);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // The ghosted match itself.
+      sampleTrack(DEMO_KEYS, u, demoOut);
+      if (demoOut.a > 0.01) {
+        const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
+        drawMatch(ctx, demoOut.a, MATCH.x + demoOut.dx, MATCH.y + demoOut.dy, flick, st);
+      }
+    }
+
+    // --- The real, lit match ------------------------------------------------
+    // At rest until the tap, then in to the fuse tip and back out again.
+    if (st.state !== 'launched') {
+      const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
+
+      let reach = 0;
+      if (st.state === 'striking') {
+        // Ease-out on the way in, so it arrives rather than slams.
+        const pr = clamp01(st.strikeT / st.strikeTravel);
+        reach = 1 - (1 - pr) * (1 - pr);
+      } else if (st.state === 'burning' || st.state === 'burnt') {
+        const q = clamp01(st.burnT / STRIKE_RETREAT);
+        reach = 1 - q * q;
+      }
+
+      drawMatch(
+        ctx,
+        1,
+        MATCH.x + STRIKE_TO.dx * reach,
+        MATCH.y + STRIKE_TO.dy * reach,
+        flick,
+        st
+      );
+    }
+  }
+
   build();
 
   const api = {
     get state() {
-      return state;
+      return chosen().state;
     },
     get scale() {
       return scale;
     },
     get fusePath() {
-      return fusePath;
+      return chosen().fusePath;
     },
     get burnProgress() {
-      // 'launched' has to count as fully burnt. Falling back to 0 here is what
-      // made the whole fuse reappear on the ground the instant the rocket
-      // left: the burn had finished, but the state had moved on past it.
-      if (state === 'launched') return 1;
-      return state === 'burning' || state === 'burnt'
-        ? clamp01(burnT / burnSeconds)
-        : 0;
+      return burnProgressOf(chosen());
     },
     get fuseTipWorld() {
-      return { x: toWorldX(TIP.x), y: toWorldY(TIP.y) };
+      const st = chosen();
+      return { x: toWorldX(TIP.x, st), y: toWorldY(TIP.y) };
     },
     get burnHeadWorld() {
-      const p = api.burnProgress;
+      const st = chosen();
+      const pr = burnProgressOf(st);
       const idx = Math.min(
-        fusePath.length - 1,
-        Math.floor(p * (fusePath.length - 1))
+        st.fusePath.length - 1,
+        Math.floor(pr * (st.fusePath.length - 1))
       );
-      return fusePath[idx];
+      return st.fusePath[idx];
     },
     get rocketBaseWorld() {
+      const st = chosen();
       return {
-        x: toWorldX(ROCKET_LOCAL.x),
+        x: toWorldX(ROCKET_LOCAL.x, st),
         y: toWorldY(ROCKET_LOCAL.y),
         scale,
         stickLength: ROCKET_LOCAL.stick,
@@ -379,77 +559,134 @@ export function createSetpiece(metrics, options = {}) {
       };
     },
     get matchWorld() {
-      return {
-        x: toWorldX(MATCH.x),
-        y: toWorldY(MATCH.y),
-        angle: MATCH.angle,
-      };
+      const st = chosen();
+      return { x: toWorldX(MATCH.x, st), y: toWorldY(MATCH.y), angle: MATCH.angle };
     },
 
-    /** Local set-piece coordinates -> world coordinates. */
-    localToWorld(lx, ly) {
-      return { x: toWorldX(lx), y: toWorldY(ly) };
+    /** The chosen firework's colourway, so the flying rocket matches it. */
+    get chosenLivery() {
+      return chosen().livery;
     },
 
-    /** Stop the ring pulse and the ghost-match loop. Called on the tap. */
-    stopIdleDemo() {
-      demoRunning = false;
-      if (state === 'idle') state = 'armed';
+    /** The id of the station that was lit, or null while still choosing. */
+    get chosenId() {
+      return chosenId;
+    },
+
+    /** World-space anchors for the language labels under each rocket. */
+    get stationAnchors() {
+      return stations.map((st) => ({
+        id: st.id,
+        x: toWorldX(ROCKET_LOCAL.x, st),
+        y: toWorldY(ROCKET_LOCAL.y),
+        topY: toWorldY(ROCKET_LOCAL.y) + ROCKET.topY * scale,
+      }));
     },
 
     /**
-     * Light the fuse at its tip. The burn walks from the tip toward the
+     * Which firework did that tap mean?
+     *
+     * Nearest station by horizontal distance, with no dead zone: an elderly
+     * viewer aiming at a rocket and landing in the grass beside it still gets
+     * the language they were reaching for. Only the halfway line decides.
+     */
+    hitTest(worldX) {
+      let best = stations[0];
+      let bestDx = Infinity;
+      for (const st of stations) {
+        const cx = toWorldX(STATION_WIDTH / 2, st);
+        const dx = Math.abs(worldX - cx);
+        if (dx < bestDx) {
+          bestDx = dx;
+          best = st;
+        }
+      }
+      return best.id;
+    },
+
+    /** Station-local coordinates of the chosen station -> world. */
+    localToWorld(lx, ly) {
+      return { x: toWorldX(lx, chosen()), y: toWorldY(ly) };
+    },
+
+    /** Stop every ring pulse and ghost demo. Called on the tap. */
+    stopIdleDemo() {
+      for (const st of stations) {
+        st.demoRunning = false;
+        if (st.state === 'idle') st.state = 'armed';
+      }
+    },
+
+    /**
+     * Commit to one firework. The other stays on the ground, unlit, and is
+     * simply left behind as the camera climbs.
+     */
+    choose(id) {
+      chosenId = byId(id).id;
+      api.stopIdleDemo();
+      return chosenId;
+    },
+
+    /**
+     * Light the chosen fuse at its tip. The burn walks from the tip toward the
      * rocket base over `seconds`; the consumed portion stops being drawn.
      */
     startFuseBurn(seconds = FUSE_BURN_SECONDS, strikeSeconds = STRIKE_TRAVEL) {
+      const st = chosen();
       api.stopIdleDemo();
       // The match has to physically reach the fuse before it can light it, so
       // the travel comes out of the same budget the burn was given. The
       // timeline owns the travel time, because the audio cue has to land on
       // the same instant the cord catches.
-      strikeTravel = Math.max(0.05, strikeSeconds);
-      burnSeconds = Math.max(0.3, seconds - strikeTravel);
-      burnT = 0;
-      strikeT = 0;
-      burnDone = false;
-      state = 'striking';
+      st.strikeTravel = Math.max(0.05, strikeSeconds);
+      st.burnSeconds = Math.max(0.3, seconds - st.strikeTravel);
+      st.burnT = 0;
+      st.strikeT = 0;
+      st.burnDone = false;
+      st.state = 'striking';
     },
 
-    /** Hide the rocket so a later phase can draw the flying one instead. */
+    /** Hide the chosen rocket so a later phase can draw the flying one. */
     setRocketVisible(visible) {
-      rocketVisible = visible;
-      if (!visible) state = 'launched';
+      const st = chosen();
+      st.rocketVisible = visible;
+      if (!visible) st.state = 'launched';
     },
 
-    /** Back to the opening frame, for replay. */
+    /** Back to the opening frame, for replay: both fireworks stand again. */
     reset() {
       time = 0;
-      burnT = 0;
-      strikeT = 0;
-      burnDone = false;
-      demoRunning = true;
-      rocketVisible = true;
-      state = 'idle';
+      chosenId = null;
+      for (const st of stations) {
+        st.burnT = 0;
+        st.strikeT = 0;
+        st.burnDone = false;
+        st.demoRunning = true;
+        st.rocketVisible = true;
+        st.state = 'idle';
+      }
     },
 
     update(dt) {
       time += dt;
-      if (state === 'striking') {
-        strikeT += dt;
-        if (strikeT >= strikeTravel) {
-          strikeT = strikeTravel;
-          state = 'burning';
-          burnT = 0;
+      for (const st of stations) {
+        if (st.state === 'striking') {
+          st.strikeT += dt;
+          if (st.strikeT >= st.strikeTravel) {
+            st.strikeT = st.strikeTravel;
+            st.state = 'burning';
+            st.burnT = 0;
+          }
         }
-      }
-      if (state === 'burning') {
-        burnT += dt;
-        if (burnT >= burnSeconds) {
-          burnT = burnSeconds;
-          state = 'burnt';
-          if (!burnDone) {
-            burnDone = true;
-            if (options.onFuseComplete) options.onFuseComplete();
+        if (st.state === 'burning') {
+          st.burnT += dt;
+          if (st.burnT >= st.burnSeconds) {
+            st.burnT = st.burnSeconds;
+            st.state = 'burnt';
+            if (!st.burnDone) {
+              st.burnDone = true;
+              if (options.onFuseComplete) options.onFuseComplete(st.id);
+            }
           }
         }
       }
@@ -463,161 +700,7 @@ export function createSetpiece(metrics, options = {}) {
 
       ctx.save();
       ctx.translate(0, -top);
-
-      // --- Fuse ----------------------------------------------------------
-      // Drawn from the burn head to the rocket base; the burnt portion in
-      // front of the head is simply not drawn.
-      const progress = api.burnProgress;
-      const last = fusePath.length - 1;
-      const startIdx = Math.min(last, Math.floor(progress * last));
-      if (startIdx < last) {
-        ctx.strokeStyle = PALETTE.fuse;
-        ctx.lineWidth = FUSE.width * scale;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(fusePath[startIdx].x, fusePath[startIdx].y);
-        for (let i = startIdx + 1; i <= last; i++) {
-          ctx.lineTo(fusePath[i].x, fusePath[i].y);
-        }
-        ctx.stroke();
-      }
-
-      // --- Rocket --------------------------------------------------------
-      if (rocketVisible) {
-        drawRocket(
-          ctx,
-          toWorldX(ROCKET_LOCAL.x),
-          toWorldY(ROCKET_LOCAL.y),
-          scale,
-          0,
-          { stickLength: ROCKET_LOCAL.stick }
-        );
-      }
-
-      // --- Unlit fuse tip ------------------------------------------------
-      // Still unlit while the match is on its way over.
-      if (state === 'idle' || state === 'armed' || state === 'striking') {
-        ctx.fillStyle = PALETTE.fuse;
-        ctx.beginPath();
-        ctx.arc(toWorldX(TIP.x), toWorldY(TIP.y), TIP.r * scale, 0, TAU);
-        ctx.fill();
-      }
-
-      // --- Pulsing ring on the fuse tip ----------------------------------
-      if (demoRunning) {
-        const u = (time % RING.period) / RING.period;
-        const cx = toWorldX(RING.x);
-        const cy = toWorldY(RING.y);
-        const r = RING.radius * scale;
-
-        // 8% gold ground inside the ring.
-        ctx.globalAlpha = RING.fillAlpha;
-        ctx.fillStyle = PALETTE.gold;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, TAU);
-        ctx.fill();
-
-        // The ring itself, brightening toward gold-hi at the peak.
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = RING.width * scale;
-        ctx.strokeStyle = PALETTE.gold;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r - (RING.width / 2) * scale, 0, TAU);
-        ctx.stroke();
-
-        ctx.globalAlpha = 0.5 - 0.5 * Math.cos(u * TAU);
-        ctx.strokeStyle = PALETTE.goldHi;
-        ctx.stroke();
-
-        // Expanding halo, 13 px, fading out. Crisp ring, no blur, no glow.
-        const spread = RING.halo * easeOutCubic(u) * scale;
-        if (spread > 0.5) {
-          ctx.globalAlpha = RING.haloAlpha * (1 - u);
-          ctx.strokeStyle = PALETTE.gold;
-          ctx.lineWidth = spread;
-          ctx.beginPath();
-          ctx.arc(cx, cy, r + spread / 2, 0, TAU);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-      }
-
-      // --- Ghost demo -----------------------------------------------------
-      if (demoRunning) {
-        const u = (time % DEMO_PERIOD) / DEMO_PERIOD;
-
-        // The flash at the tip, during the hold.
-        sampleTrack(FLASH_KEYS, u, flashOut);
-        if (flashOut.a > 0.01) {
-          const fx = toWorldX(FLASH.x);
-          const fy = toWorldY(FLASH.y);
-          ctx.lineWidth = 1.5 * scale;
-          ctx.lineCap = 'butt';
-          for (let i = 0; i < flashSparks.length; i++) {
-            const s = flashSparks[i];
-            ctx.globalAlpha = flashOut.a * 0.26;
-            ctx.strokeStyle = s.colour;
-            ctx.beginPath();
-            ctx.moveTo(fx + s.ix * scale, fy + s.iy * scale);
-            ctx.lineTo(fx + s.ox * scale, fy + s.oy * scale);
-            ctx.stroke();
-
-            ctx.globalAlpha = flashOut.a * s.alpha;
-            ctx.fillStyle = s.colour;
-            ctx.beginPath();
-            ctx.arc(
-              fx + s.ox * scale,
-              fy + s.oy * scale,
-              s.size * scale,
-              0,
-              TAU
-            );
-            ctx.fill();
-          }
-          ctx.globalAlpha = 1;
-        }
-
-        // The ghosted match itself.
-        sampleTrack(DEMO_KEYS, u, demoOut);
-        if (demoOut.a > 0.01) {
-          const flick =
-            0.5 -
-            0.5 * Math.cos((time / MATCH.flame.period) * TAU);
-          drawMatch(
-            ctx,
-            demoOut.a,
-            MATCH.x + demoOut.dx,
-            MATCH.y + demoOut.dy,
-            flick
-          );
-        }
-      }
-
-      // --- The real, lit match --------------------------------------------
-      // At rest until the tap, then in to the fuse tip and back out again.
-      if (state !== 'launched') {
-        const flick =
-          0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
-
-        let reach = 0;
-        if (state === 'striking') {
-          // Ease-out on the way in, so it arrives rather than slams.
-          const p = clamp01(strikeT / strikeTravel);
-          reach = 1 - (1 - p) * (1 - p);
-        } else if (state === 'burning' || state === 'burnt') {
-          const q = clamp01(burnT / STRIKE_RETREAT);
-          reach = 1 - q * q;
-        }
-
-        drawMatch(
-          ctx,
-          1,
-          MATCH.x + STRIKE_TO.dx * reach,
-          MATCH.y + STRIKE_TO.dy * reach,
-          flick
-        );
-      }
-
+      for (const st of stations) drawStation(ctx, st);
       ctx.globalAlpha = 1;
       ctx.restore();
     },

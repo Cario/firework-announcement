@@ -36,6 +36,71 @@ import { createRng, hashString } from '../engine/rng.js';
 /** The display face. Georgia is the fallback the font guard exists to detect. */
 export const DISPLAY_FAMILY = '"Cormorant Garamond", Georgia, serif';
 
+/** The Urdu display face. Nastaliq, which is what Urdu is actually set in. */
+export const URDU_FAMILY = '"Noto Nastaliq Urdu", "Noto Naskh Arabic", serif';
+
+/**
+ * The active script's typographic profile.
+ *
+ * Urdu is not "English with different glyphs", and three of these differences
+ * would each on their own produce broken output:
+ *
+ *  - `rtl` — words pack from the right, so the first word of a line is the
+ *    rightmost one and rows read right to left.
+ *  - `allowTracking` — Arabic-script letters join into ligatures and change
+ *    shape by position. The tracked path draws a string one character at a
+ *    time, which severs every join; SURPRISE needs it, سرپرائز must never
+ *    have it.
+ *  - `heightFactor` / `weight` — Nastaliq cascades diagonally downward and
+ *    routinely paints far outside the box a Latin face of the same size
+ *    occupies. Sampling it in the Latin-sized canvas clips the tails off. It
+ *    also has only a 400 weight, so asking for 600 silently synthesises a
+ *    bold and thickens the strokes into mush.
+ */
+const SCRIPTS = {
+  en: {
+    family: DISPLAY_FAMILY,
+    weight: 600,
+    rtl: false,
+    allowTracking: true,
+    allowItalic: true,
+    heightFactor: 2,
+    padFactor: 0.4,
+    lineHeight: 1.62,
+  },
+  ur: {
+    family: URDU_FAMILY,
+    weight: 400,
+    rtl: true,
+    allowTracking: false,
+    allowItalic: false,
+    heightFactor: 3.4,
+    padFactor: 0.7,
+    lineHeight: 2.05,
+  },
+};
+
+let script = SCRIPTS.en;
+
+/**
+ * Switch the text engine to a language. Call before any sampling; the whole
+ * page is one language at a time, so this is module state rather than an
+ * argument threaded through every call site.
+ *
+ * @param {'en'|'ur'|{lang:string}} lang
+ */
+export function setTextLanguage(lang) {
+  const key = typeof lang === 'string' ? lang : lang && lang.lang;
+  script = SCRIPTS[key] || SCRIPTS.en;
+  invalidatePointCache();
+  return script;
+}
+
+/** The active script profile, for callers that need its metrics. */
+export function textScript() {
+  return script;
+}
+
 /** The exact probe string plan 6.3 names for the readiness check. */
 const FONT_PROBE = `600 40px ${DISPLAY_FAMILY}`;
 
@@ -135,14 +200,21 @@ function getSampleCtx(w, h) {
  * @param {number} [weight=600]
  */
 export function fontString(size, italic, weight) {
-  const w = weight === undefined ? 600 : weight;
-  return `${italic ? 'italic ' : ''}${w} ${size}px ${DISPLAY_FAMILY}`;
+  const w = weight === undefined ? script.weight : weight;
+  // Nastaliq ships one weight and no italic; asking for either makes the
+  // browser synthesise it, which smears the joins.
+  const slant = italic && script.allowItalic ? 'italic ' : '';
+  return `${slant}${w} ${size}px ${script.family}`;
 }
 
 // --- Font guard --------------------------------------------------------------
 
 /** The two faces the sky text uses: upright for SURPRISE, italic for the lines. */
-const REQUIRED_FACES = [`600 40px ${DISPLAY_FAMILY}`, `italic 600 40px ${DISPLAY_FAMILY}`];
+const REQUIRED_FACES = [
+  `600 40px ${DISPLAY_FAMILY}`,
+  `italic 600 40px ${DISPLAY_FAMILY}`,
+  `400 40px ${URDU_FAMILY}`,
+];
 
 /**
  * Resolve once the display face is actually available.
@@ -230,7 +302,8 @@ export function pointCacheSize() {
 export function measureDisplayText(text, size, italic, letterSpacing) {
   const ctx = getMeasureCtx();
   ctx.font = fontString(size, italic);
-  if (!letterSpacing) return ctx.measureText(text).width;
+  ctx.direction = script.rtl ? 'rtl' : 'ltr';
+  if (!letterSpacing || !script.allowTracking) return ctx.measureText(text).width;
   let w = 0;
   for (let i = 0; i < text.length; i++) w += ctx.measureText(text[i]).width;
   return w + letterSpacing * Math.max(0, text.length - 1);
@@ -259,7 +332,8 @@ export function measureDisplayText(text, size, italic, letterSpacing) {
 export function samplePointsInfo(text, opts) {
   const o = opts || {};
   const italic = o.italic === true;
-  const letterSpacing = o.letterSpacing || 0;
+  // Tracking is silently dropped for joining scripts — see SCRIPTS above.
+  const letterSpacing = script.allowTracking ? o.letterSpacing || 0 : 0;
   const requested = o.fontSize === undefined ? FONT_MAX : o.fontSize;
   const maxWidth = o.maxWidth === undefined ? 0 : o.maxWidth;
   const maxPoints = o.maxPoints === undefined ? 900 : o.maxPoints;
@@ -326,9 +400,9 @@ function sampleUncached(text, requested, italic, letterSpacing, maxWidth, densit
   if (density < 3) density = 3;
   if (density > 6) density = 6;
 
-  const pad = Math.ceil(fontSize * 0.4);
+  const pad = Math.ceil(fontSize * script.padFactor);
   const canvasW = Math.max(2, Math.ceil(width) + pad * 2);
-  const canvasH = Math.max(2, Math.ceil(fontSize * 2));
+  const canvasH = Math.max(2, Math.ceil(fontSize * script.heightFactor));
   const cx = canvasW / 2;
   const cy = canvasH / 2;
 
@@ -336,6 +410,7 @@ function sampleUncached(text, requested, italic, letterSpacing, maxWidth, densit
   ctx.font = fontString(fontSize, italic);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
+  ctx.direction = script.rtl ? 'rtl' : 'ltr';
   // White on transparent — only the alpha channel is read, but a bright fill
   // keeps the antialiased edge well above the threshold.
   ctx.fillStyle = PALETTE.whiteSpark;
@@ -467,12 +542,16 @@ export function drawDisplayText(ctx, text, x, y, opts) {
   ctx.font = fontString(fontSize, italic);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
+  // Bidi ordering for the run. Matters for the date line, where Urdu digits
+  // sit beside Urdu words and the two have different inherent directions.
+  ctx.direction = script.rtl ? 'rtl' : 'ltr';
 
+  const trackable = spacing && script.allowTracking;
   const width =
     o.width === undefined ? measureDisplayText(text, fontSize, italic, spacing) : o.width;
   const startX = x - width / 2;
 
-  if (!spacing) {
+  if (!trackable) {
     ctx.fillText(text, startX, y);
     return;
   }
@@ -699,7 +778,7 @@ export function layoutLine(words, viewport, options) {
   const empty = {
     fontSize: FONT_MIN,
     italic,
-    lineHeight: FONT_MIN * LINE_HEIGHT,
+    lineHeight: FONT_MIN * script.lineHeight,
     rowCount: 0,
     maxRowWidth,
     rows: [],
@@ -763,7 +842,7 @@ export function layoutLine(words, viewport, options) {
     widest = maxRowWidth;
   }
 
-  const lineHeight = fontSize * LINE_HEIGHT;
+  const lineHeight = fontSize * script.lineHeight;
   const centerY = o.centerY === undefined ? vh * 0.46 : o.centerY;
 
   // Vertical safe band, so a jittered word can never leave the viewport.
@@ -800,11 +879,17 @@ export function layoutLine(words, viewport, options) {
     for (let i = from; i < to; i++) rowWidth += wordWidths[i] + (i > from ? spaceWidth : 0);
 
     const rowY = centerY + (r - (rowCount - 1) / 2) * lineHeight;
-    let penX = (vw - rowWidth) / 2;
+    // Right-to-left scripts start at the row's right edge and walk inward, so
+    // the FIRST word of the sentence is the RIGHTMOST one. Getting this wrong
+    // does not look broken — it looks like fluent Urdu in reverse order, which
+    // is far worse, because only a reader would catch it.
+    const rowStart = (vw - rowWidth) / 2;
+    let penX = script.rtl ? rowStart + rowWidth : rowStart;
 
     const rowWords = [];
     for (let i = from; i < to; i++) {
       const w = wordWidths[i];
+      if (script.rtl) penX -= w;
       let x = penX + w / 2;
       // Hard clipping guarantee, independent of the size maths above.
       if (x - w / 2 < 0) x = w / 2;
@@ -817,7 +902,7 @@ export function layoutLine(words, viewport, options) {
       const entry = { text: list[i], x, y, width: w, row: r, index: wordIndex++ };
       rowWords.push(entry);
       flat.push(entry);
-      penX += w + spaceWidth;
+      penX += script.rtl ? -spaceWidth : w + spaceWidth;
     }
 
     rows.push({ index: r, y: rowY, width: rowWidth, words: rowWords });

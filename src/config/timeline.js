@@ -9,7 +9,7 @@
  * Source table: docs/plans/01-implementation-plan.md § 2.3
  */
 
-import { CONTENT } from './content.js';
+import { CONTENT_EN } from './content.js';
 
 /* ------------------------------------------------------------------ *
  * Absolute beats
@@ -250,29 +250,24 @@ export function planLine({ text, start, end, colorOffset = 0, kindPrefix = 'word
  * ("with Neha Kashif, the beloved daughter of Kashif Ali and Aisha Kashif").
  * CONTENT wins — it is the single source of truth.
  */
-export const LINES = [
-  planLine({
-    text: CONTENT.lines[0],
-    start: T.LINE1_START,
-    end: T.LINE1_END,
-    colorOffset: 0,
-    kindPrefix: 'line1',
-  }),
-  planLine({
-    text: CONTENT.lines[1],
-    start: T.LINE2_START,
-    end: T.LINE2_END,
-    colorOffset: 1,
-    kindPrefix: 'line2',
-  }),
-  planLine({
-    text: CONTENT.lines[2],
-    start: T.LINE3_START,
-    end: T.LINE3_END,
-    colorOffset: 2,
-    kindPrefix: 'line3',
-  }),
-];
+/**
+ * Build the three invitation lines for one language.
+ *
+ * Word counts come from the content, never from a constant, so a language
+ * whose lines are longer or shorter simply gets more or fewer fireworks. The
+ * per-line time windows are fixed, and `planLine` compresses its own stagger
+ * to fit them, so the total runtime stays 30 s in every language.
+ */
+export function buildLines(content) {
+  return [
+    planLine({ text: content.lines[0], start: T.LINE1_START, end: T.LINE1_END, colorOffset: 0, kindPrefix: 'line1' }),
+    planLine({ text: content.lines[1], start: T.LINE2_START, end: T.LINE2_END, colorOffset: 1, kindPrefix: 'line2' }),
+    planLine({ text: content.lines[2], start: T.LINE3_START, end: T.LINE3_END, colorOffset: 2, kindPrefix: 'line3' }),
+  ];
+}
+
+/** English lines, for the modules that still import `LINES` directly. */
+export const LINES = buildLines(CONTENT_EN);
 
 /* ------------------------------------------------------------------ *
  * Phases — the director's state machine, as windows
@@ -317,7 +312,9 @@ export function phaseAt(t) {
  * `payload.duration` (where present) is how long the beat itself runs, and is
  * what `scheduleEnd()` sums against to find the true end of the piece.
  */
-export const SCHEDULE = [
+export function buildSchedule(content) {
+  const lines = buildLines(content);
+  return [
   // --- Fuse -----------------------------------------------------------
   {
     t: T.FUSE_START,
@@ -365,7 +362,7 @@ export const SCHEDULE = [
     t: T.SURPRISE_RESOLVE_START,
     kind: 'surpriseResolve',
     payload: {
-      text: CONTENT.surprise,
+      text: content.surprise,
       colors: SURPRISE_COLORS,
       duration: T.SURPRISE_RESOLVE_END - T.SURPRISE_RESOLVE_START,
     },
@@ -393,7 +390,7 @@ export const SCHEDULE = [
     t: T.DATELINE_START,
     kind: 'datelineResolve',
     payload: {
-      lines: [CONTENT.dateLine, CONTENT.locationLine],
+      lines: [content.dateLine, content.locationLine],
       colors: DATELINE_COLORS,
       duration: T.DATELINE_END - T.DATELINE_START,
     },
@@ -416,46 +413,60 @@ export const SCHEDULE = [
     payload: { duration: T.CARD_END - T.CARD_START },
   },
 ]
-  .concat(LINES.flatMap((line) => line.events))
+  .concat(lines.flatMap((line) => line.events))
   .sort((a, b) => a.t - b.t);
-
-/**
- * Sum the schedule: the latest moment anything is still running.
- * Phase 7 asserts this lands within TARGET_RUNTIME ± RUNTIME_TOLERANCE.
- */
-export function scheduleEnd() {
-  let end = 0;
-  for (const event of SCHEDULE) {
-    const duration = event.payload && typeof event.payload.duration === 'number' ? event.payload.duration : 0;
-    const finish = event.t + duration;
-    if (finish > end) end = finish;
-  }
-  return end;
 }
 
 /**
- * Runtime check for Phase 7: `{ ok, total, target, tolerance }`.
- * Pure — returns a result, never throws or logs, so a caller decides what a
- * failure means.
+ * Everything the director needs for one language, bound to that language's
+ * schedule. Call once per language; the director holds the result.
+ *
+ * @param {object} content one of the objects from `config/content.js`
  */
-export function checkRuntime(tolerance = RUNTIME_TOLERANCE) {
-  const total = scheduleEnd();
+export function createTimeline(content) {
+  const schedule = buildSchedule(content);
+  const lines = buildLines(content);
+
+  /** The latest moment anything is still running. */
+  function scheduleEndOf() {
+    let end = 0;
+    for (const event of schedule) {
+      const duration =
+        event.payload && typeof event.payload.duration === 'number' ? event.payload.duration : 0;
+      const finish = event.t + duration;
+      if (finish > end) end = finish;
+    }
+    return end;
+  }
+
   return {
-    ok: Math.abs(total - TARGET_RUNTIME) <= tolerance,
-    total,
-    target: TARGET_RUNTIME,
-    tolerance,
+    content,
+    schedule,
+    lines,
+    scheduleEnd: scheduleEndOf,
+
+    /**
+     * Every event in `[from, to)`, in order. The director calls this each
+     * frame with the window the loop just advanced through, so nothing is
+     * missed on a long frame and nothing fires twice.
+     */
+    eventsBetween(from, to) {
+      return schedule.filter((event) => event.t >= from && event.t < to);
+    },
+
+    /**
+     * `{ ok, total, target, tolerance }`. Pure — returns a result rather than
+     * throwing, so the caller decides what a failure means. Both languages
+     * must land inside the tolerance despite differing word counts.
+     */
+    checkRuntime(tolerance = RUNTIME_TOLERANCE) {
+      const total = scheduleEndOf();
+      return {
+        ok: Math.abs(total - TARGET_RUNTIME) <= tolerance,
+        total,
+        target: TARGET_RUNTIME,
+        tolerance,
+      };
+    },
   };
 }
-
-/**
- * Every event in `[from, to)`, in order. The director calls this each frame
- * with the window the loop just advanced through, so nothing is missed on a
- * long frame and nothing fires twice.
- */
-export function eventsBetween(from, to) {
-  return SCHEDULE.filter((event) => event.t >= from && event.t < to);
-}
-
-/** Back-compat alias: the scaffold stub exported `TIMELINE`. */
-export const TIMELINE = SCHEDULE;

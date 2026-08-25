@@ -27,6 +27,9 @@ import { createInviteCard } from './ui/inviteCard.js';
 
 import * as sound from './audio/sound.js';
 import { createDirector } from './sequence/director.js';
+import { getContent } from './config/content.js';
+import { createTimeline } from './config/timeline.js';
+import { ensureFontsReady, setTextLanguage } from './fx/textPoints.js';
 
 /**
  * Boot.
@@ -100,33 +103,101 @@ if (!canvasEl) {
   const prompt = uiEl ? createPrompt(uiEl) : null;
   createMuteToggle({ mount: uiEl || stageEl });
 
-  const card = createInviteCard({
-    mount: uiEl || stageEl,
-    a11yTarget: a11yEl,
-    onReplay: () => {
-      card.hide();
-      director.reset();
-      armed = true;
+  let card = null;
+
+  /**
+   * Stand-in while the viewer is still choosing a firework.
+   *
+   * Two fireworks are on the ground and neither has been lit, so there is no
+   * language yet and therefore no schedule and no card. Rather than scatter
+   * null checks through the render loop, an inert director satisfies the same
+   * shape and simply does nothing.
+   */
+  const IDLE_DIRECTOR = {
+    state: 'idle',
+    phase: 'idle',
+    elapsed: 0,
+    openness: 0,
+    flying: false,
+    failed: false,
+    reducedMotion: false,
+    calmLine: null,
+    glyphList: [],
+    rocket: { x: 0, y: 0, scale: 1, stickLength: 0 },
+    update() {},
+    start() {},
+    reset() {},
+    resize() {},
+    prepare() {
+      return Promise.resolve(true);
     },
-  });
+    runtime() {
+      return { ok: true, total: 0, target: 30, tolerance: 0.5 };
+    },
+  };
 
-  director = createDirector({
-    view,
-    camera,
-    metrics,
-    setpiece,
-    particles,
-    trail,
-    sound,
-    prompt,
-    onFinished: () => card.show(),
-  });
+  director = IDLE_DIRECTOR;
 
-  // Warm the display faces now, while the viewer is still looking at the
-  // opening frame. Sampling a glyph before its webfont has arrived silently
-  // produces Georgia-shaped text, and the first sample happens 4 s after the
-  // tap — this makes sure it has landed long before then.
-  director.prepare();
+  /**
+   * Commit to a language and build everything that depends on it.
+   *
+   * The timeline is derived from that language's own strings, so Urdu — whose
+   * lines break into different numbers of words — gets its own number of
+   * fireworks, and the card, the replay button and the sky text all switch
+   * script and reading direction together.
+   */
+  function buildForLanguage(lang) {
+    const content = getContent(lang);
+    setTextLanguage(content);
+    document.documentElement.lang = content.htmlLang;
+
+    if (card) card.dispose();
+    card = createInviteCard({
+      mount: uiEl || stageEl,
+      a11yTarget: a11yEl,
+      content,
+      onReplay: () => {
+        card.hide();
+        returnToChooser();
+      },
+    });
+
+    director = createDirector({
+      view,
+      camera,
+      metrics,
+      setpiece,
+      particles,
+      trail,
+      sound,
+      prompt,
+      content,
+      timeline: createTimeline(content),
+      onFinished: () => card.show(),
+    });
+
+    return director;
+  }
+
+  /** Back to two unlit fireworks, so the language can be chosen again. */
+  function returnToChooser() {
+    director.reset();
+    director = IDLE_DIRECTOR;
+    particles.reset();
+    trail.reset();
+    setpiece.reset();
+    camera.reset();
+    sound.stopAll();
+    if (prompt) prompt.show();
+    armed = true;
+  }
+
+  // Warm BOTH display faces now, while the viewer is still choosing. Sampling
+  // a glyph before its webfont has arrived silently produces a fallback-shaped
+  // cloud, and the first sample happens 4 s after the tap — this makes sure
+  // Cormorant and Nastaliq have both landed long before then, whichever
+  // firework gets lit.
+  ensureFontsReady();
 
   /* ---------------------------------------------------------------- *
    * Input — the whole viewport is the target
@@ -172,9 +243,34 @@ if (!canvasEl) {
     window.addEventListener(type, primeAudio, true);
   }
 
-  function ignite() {
+  /**
+   * Screen x -> world x, undoing the opening crop.
+   *
+   * The crop scales the whole composited frame about a focal point, so a tap
+   * at the left-hand rocket lands at a different screen x than the rocket's
+   * world x. Without this the hit test picks the wrong firework — and so the
+   * wrong language — at every viewport where the crop is active, which is all
+   * of them.
+   */
+  function screenToWorldX(screenX) {
+    if (lastZoom <= 1.001) return screenX;
+    return lastFocal.x + (screenX - lastFocal.x) / lastZoom;
+  }
+
+  function ignite(event) {
     if (!armed || director.state !== 'idle') return;
     armed = false;
+
+    // Which firework was that? Nearest one wins, so a tap that lands in the
+    // grass beside a rocket still chooses the language it was aimed at.
+    const rect = (stageEl || document.body).getBoundingClientRect();
+    const screenX =
+      event && typeof event.clientX === 'number'
+        ? event.clientX - rect.left
+        : view.width / 2;
+    const lang = setpiece.hitTest(screenToWorldX(screenX));
+    setpiece.choose(lang);
+    buildForLanguage(lang);
     // Audio has to be created inside the gesture, and must never be able to
     // hold up the visuals: `initAudio` always resolves, and the sequence
     // starts regardless of what it resolves to.
@@ -199,7 +295,9 @@ if (!canvasEl) {
       const el = document.activeElement;
       if (el && el.tagName === 'BUTTON') return;
       event.preventDefault();
-      ignite();
+      // No pointer to aim with: default to the English firework, which is the
+      // left-hand one and the first in reading order.
+      ignite(null);
     }
   });
 
@@ -255,6 +353,10 @@ if (!canvasEl) {
    * firework occupies the SAME fraction of the viewport whatever the size or
    * aspect ratio, then pulls back to 1 as the rocket climbs.
    */
+  /** Last frame's crop, so a tap can be mapped back into world space. */
+  let lastZoom = 1;
+  let lastFocal = { x: 0, y: 0 };
+
   const OPEN_SPAN = 0.62;
   const OPEN_SPAN_V = 0.72;
 
@@ -328,6 +430,27 @@ if (!canvasEl) {
     prompt.el.style.bottom = `${Math.round(bottomPx)}px`;
   }
 
+  /**
+   * Park each language label under its own firework.
+   *
+   * Measured from the rendered position of that station's rocket, through the
+   * same crop the canvas uses, so the labels track their fireworks at every
+   * viewport size instead of drifting off them.
+   */
+  function positionLabels(zoom, focal) {
+    if (!prompt || !prompt.visible || !prompt.labels) return;
+    const anchors = setpiece.stationAnchors;
+    for (const a of anchors) {
+      const el = prompt.labels[a.id];
+      if (!el) continue;
+      const baseScreenY = a.y - camera.y;
+      const renderedY = focal.y + (baseScreenY - focal.y) * zoom;
+      const renderedX = focal.x + (a.x - focal.x) * zoom;
+      el.style.left = `${Math.round(renderedX)}px`;
+      el.style.top = `${Math.round(renderedY + 18 * zoom)}px`;
+    }
+  }
+
   function render(dt) {
     director.update(dt);
 
@@ -343,7 +466,10 @@ if (!canvasEl) {
     const zoomed = zoom > 1.001;
     const focal = focalPoint();
 
+    lastZoom = zoom;
+    lastFocal = focal;
     positionPrompt(zoom, focal);
+    positionLabels(zoom, focal);
 
     ctx.save();
     if (zoomed) {
@@ -366,7 +492,12 @@ if (!canvasEl) {
       const r = director.rocket;
       particles.render(ctx);
       trail.drawFlame(ctx, r.x, r.y + r.stickLength * r.scale, 0, r.scale);
-      drawRocket(ctx, r.x, r.y, r.scale, 0, { stickLength: r.stickLength });
+      // The rocket in the air has to be the one they lit: the red English
+      // firework or the blue Urdu one, not whichever the default happens to be.
+      drawRocket(ctx, r.x, r.y, r.scale, 0, {
+        stickLength: r.stickLength,
+        livery: setpiece.chosenLivery,
+      });
       clouds.draw(ctx, camera, 'front');
     } else {
       clouds.draw(ctx, camera, 'front');

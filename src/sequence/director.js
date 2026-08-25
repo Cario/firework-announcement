@@ -22,14 +22,13 @@
 import {
   T,
   PHASES,
-  eventsBetween,
-  scheduleEnd,
-  checkRuntime,
+  createTimeline,
   SURPRISE_COLORS,
   DATELINE_COLORS,
 } from '../config/timeline.js';
-import { CONTENT } from '../config/content.js';
-import { easeInCubic, clamp01 } from '../engine/easing.js';
+import { CONTENT_EN } from '../config/content.js';
+import { setTextLanguage } from '../fx/textPoints.js';
+import { easeInCubic, easeInOutCubic, clamp01 } from '../engine/easing.js';
 import { emitBurst, emitShell, setBurstSystem } from '../fx/burst.js';
 import {
   ensureFontsReady,
@@ -136,6 +135,16 @@ export function createDirector(deps) {
   const onFinished = deps.onFinished || (() => {});
 
   setBurstSystem(particles);
+
+  // Language. The content drives the words, and the timeline is built FROM
+  // that content, so a language with different word counts gets a different
+  // number of fireworks without anything here changing.
+  const CONTENT = deps.content || CONTENT_EN;
+  const timeline = deps.timeline || createTimeline(CONTENT);
+  const eventsBetween = (a, b) => timeline.eventsBetween(a, b);
+  const scheduleEnd = () => timeline.scheduleEnd();
+  const checkRuntime = () => timeline.checkRuntime();
+  setTextLanguage(CONTENT);
 
   /** 'idle' | 'running' | 'finished' */
   let state = 'idle';
@@ -254,7 +263,19 @@ export function createDirector(deps) {
     const previousY = rocketWorldY;
 
     rocketWorldY = launchY + (apexY - launchY) * climbEase(p);
-    rocketWorldX = launchX + Math.sin(p * Math.PI * 2.2) * DRIFT_AMPLITUDE * rocketScale;
+    // Arc toward the middle of the frame as it climbs.
+    //
+    // With two fireworks on the ground neither of them starts centred, so a
+    // rocket that only ever drifted would burst off to one side while its
+    // text resolved in the centre — the flare and the words in different
+    // places. Gliding to the centre puts the burst exactly where the writing
+    // is about to appear, and reads as a natural lean rather than a correction.
+    const centreX = view.width / 2;
+    const glide = easeInOutCubic(p);
+    rocketWorldX =
+      launchX +
+      (centreX - launchX) * glide +
+      Math.sin(p * Math.PI * 2.2) * DRIFT_AMPLITUDE * rocketScale;
 
     // Finite difference rather than an analytic derivative: the profile is
     // piecewise, and the camera only needs the velocity to lead its spring.

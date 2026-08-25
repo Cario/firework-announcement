@@ -58,6 +58,14 @@ export const PALETTE = {
   redHi: '#e4644f',
   redLo: '#8f2f22',
 
+  // The Urdu rocket's livery: the same three-step cylinder shading as the red
+  // one, shifted to a deep cobalt. Picked to read as unmistakably "the other
+  // firework" against the night sky without competing with the gold sparks —
+  // `blue` above is a spark colour and is far too light for a rocket body.
+  rocketBlue: '#2f57c8',
+  rocketBlueHi: '#4f7be4',
+  rocketBlueLo: '#22348f',
+
   // Match and exhaust flame.
   flame: '#ffb347',
 

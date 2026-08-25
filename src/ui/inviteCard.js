@@ -21,7 +21,7 @@
  *         docs/specs/2026-08-25-nikkah-invite-design.md § "Final card text"
  */
 
-import { CONTENT } from '../config/content.js';
+import { CONTENT_EN } from '../config/content.js';
 import { PALETTE } from '../config/palette.js';
 import './inviteCard.css';
 
@@ -32,7 +32,7 @@ import './inviteCard.css';
  * is declared here rather than by silently editing that file. It is a
  * label, not part of the invitation wording.
  */
-const EYEBROW = 'Nikkah';
+
 
 /** Must match `--card-enter` in inviteCard.css. */
 const ENTER_MS = 900;
@@ -95,7 +95,12 @@ export function createInviteCard(options = {}) {
       ? document.getElementById('a11y-text')
       : options.a11yTarget;
 
+  // The whole card follows one language: strings, reading direction, and the
+  // face used to set them. Urdu is right-to-left and Nastaliq, both of which
+  // are properties of the card element rather than of any individual string.
+  const CONTENT = options.content || CONTENT_EN;
   const c = CONTENT.card;
+  const EYEBROW = c.eyebrow;
 
   // --- structure ------------------------------------------------------
 
@@ -114,6 +119,9 @@ export function createInviteCard(options = {}) {
 
   const card = document.createElement('div');
   card.className = 'invite-card';
+  card.lang = CONTENT.htmlLang;
+  card.dir = CONTENT.dir;
+  if (CONTENT.lang === 'ur') card.classList.add('invite-card--urdu');
 
   card.appendChild(makeLine('p', 'invite-eyebrow', EYEBROW));
   card.appendChild(makeLine('h1', 'invite-intro', c.intro));
@@ -132,6 +140,9 @@ export function createInviteCard(options = {}) {
   replayButton.type = 'button';
   replayButton.className = 'invite-replay';
   replayButton.textContent = CONTENT.replay;
+  replayButton.lang = CONTENT.htmlLang;
+  replayButton.dir = CONTENT.dir;
+  if (CONTENT.lang === 'ur') replayButton.classList.add('invite-replay--urdu');
 
   panel.appendChild(card);
   panel.appendChild(replayButton);

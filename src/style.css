@@ -332,3 +332,105 @@ body {
     opacity: 1;
   }
 }
+
+/* ---------------------------------------------------------------
+   Bilingual: the language choice, and Urdu typesetting
+   --------------------------------------------------------------- */
+
+/* The prompt now carries one line per language, stacked. */
+.prompt-line {
+  display: block;
+  text-align: center;
+}
+
+.prompt-line--urdu {
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', serif;
+  /* Nastaliq cascades diagonally, so it needs far more leading than a Latin
+     face at the same size, and it reads small at a matched pixel size. */
+  font-size: 1.18em;
+  line-height: 2;
+  margin-top: 0.15em;
+}
+
+/* One label under each firework, positioned per-frame from main.js. */
+.lang-label {
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 20;
+
+  color: var(--ink);
+  font-family: 'Jost', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-weight: 500;
+  font-size: clamp(15px, 2.1vw, 20px);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-shadow:
+    0 0 14px rgba(240, 194, 94, 0.4),
+    0 2px 6px rgba(3, 8, 20, 0.95);
+
+  pointer-events: none;
+  transition: opacity 320ms ease;
+}
+
+.lang-label--urdu {
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', serif;
+  font-size: clamp(18px, 2.6vw, 25px);
+  /* Nastaliq sits high in its box; nudge it back onto the same optical line
+     as the Latin label beside it. */
+  line-height: 1.9;
+}
+
+.lang-label[hidden] {
+  display: none;
+}
+
+/* --- The card, set in Urdu ------------------------------------------- */
+
+.invite-card--urdu {
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', serif;
+  /* Every line needs roughly double the leading a Latin face wants, or the
+     descending tail of one line lands in the head of the next. */
+  line-height: 2.1;
+}
+
+.invite-card--urdu .invite-eyebrow {
+  letter-spacing: 0;
+  font-size: 15px;
+}
+
+.invite-card--urdu .invite-intro,
+.invite-card--urdu .invite-name,
+.invite-card--urdu .invite-parents,
+.invite-card--urdu .invite-date,
+.invite-card--urdu .invite-location {
+  font-family: inherit;
+  /* Nastaliq has no italic; a synthesised slant smears the joins. */
+  font-style: normal;
+  line-height: 2.1;
+}
+
+.invite-card--urdu .invite-intro {
+  font-size: clamp(22px, 4.4vw, 30px);
+}
+
+.invite-card--urdu .invite-name {
+  font-size: clamp(20px, 4.2vw, 27px);
+}
+
+.invite-card--urdu .invite-parents,
+.invite-card--urdu .invite-location {
+  font-size: clamp(14px, 3.2vw, 17px);
+}
+
+.invite-card--urdu .invite-date {
+  font-size: clamp(16px, 3.4vw, 19px);
+}
+
+.invite-replay--urdu {
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', serif;
+  font-size: clamp(15px, 3.2vw, 18px);
+  line-height: 2;
+  /* The taller line box would otherwise clip the descenders inside the pill. */
+  padding-top: 0.55em;
+  padding-bottom: 0.75em;
+}
