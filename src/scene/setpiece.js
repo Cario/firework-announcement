@@ -128,6 +128,9 @@ const MATCH = {
 /** Where the match head must land to light each fuse, in box coordinates. */
 const MATCH_TARGET = { en: { x: 62, y: 150 }, ur: { x: 128, y: 150 } };
 
+/** How far above its fuse the match materialises before coming down. */
+const MATCH_DROP = { dx: 26, dy: 46 };
+
 /** Ghost-match demo, one loop every 3.6 s. Plan 3.5. */
 const DEMO_PERIOD = 3.6;
 
@@ -371,6 +374,17 @@ export function createSetpiece(metrics, options = {}) {
     ctx.rotate(MATCH.angle);
     ctx.scale(scale, scale);
 
+    drawMatchBody(ctx, flick);
+
+    ctx.restore();
+  }
+
+  /**
+   * The match itself, in its own local frame: the caller has already applied
+   * the translate, mirror, rotate and scale. Split out so the ghost demo can
+   * reuse it under a completely different transform.
+   */
+  function drawMatchBody(ctx, flick) {
     // Stick: a capsule, which is what a 3 px radius on an 8 px bar reads as.
     ctx.strokeStyle = PALETTE.stick;
     ctx.lineWidth = MATCH.thickness;
@@ -405,8 +419,6 @@ export function createSetpiece(metrics, options = {}) {
     ctx.ellipse(0, cy, rx, ryBot, 0, 0, Math.PI);
     ctx.closePath();
     ctx.fill();
-    ctx.restore();
-
     ctx.restore();
   }
 
@@ -544,61 +556,55 @@ export function createSetpiece(metrics, options = {}) {
   }
 
   /**
-   * The one match, drawn in box space.
+   * The match, once a firework has been chosen.
    *
-   * While the viewer is still choosing it leans toward each fuse in turn — a
-   * ghost to the left on one cycle, to the right on the next — which is what
-   * says "this one match can light either of them". Once a firework is chosen
-   * it makes the real trip to that fuse and withdraws.
+   * Nothing is drawn while the viewer is still deciding — a lit match sitting
+   * beside one of the two rockets reads as a recommendation, and the earlier
+   * version genuinely looked like it was telling people to pick the red one.
+   * The neutral demonstration happens elsewhere, on its own ghost rocket.
+   *
+   * On a choice the match materialises above that rocket and comes DOWN onto
+   * its fuse, so the gesture belongs to the firework actually picked.
    */
   function drawTheMatch(ctx) {
-    const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
+    if (chosenId === null) return;
     const st = chosen();
-    const committed = chosenId !== null && st.state !== 'idle' && st.state !== 'armed';
+    if (st.state === 'idle' || st.state === 'armed' || st.state === 'launched') return;
 
-    if (!committed) {
-      // Idle: alternate the demo between the two fuses.
-      const cycle = Math.floor(time / DEMO_PERIOD);
-      const target = cycle % 2 === 0 ? MATCH_TARGET.en : MATCH_TARGET.ur;
-      const mirror = cycle % 2 !== 0;
-      const u = (time % DEMO_PERIOD) / DEMO_PERIOD;
-
-      if (stations[0].demoRunning) {
-        sampleTrack(DEMO_KEYS, u, demoOut);
-        if (demoOut.a > 0.01) {
-          const gx = MATCH.x + (target.x - MATCH.x) * demoOut.dx;
-          const gy = MATCH.y + (target.y - MATCH.y) * demoOut.dy;
-          drawMatch(ctx, demoOut.a, mirrorX(gx, mirror), gy, flick, mirror);
-        }
-      }
-      drawMatch(ctx, 1, MATCH.x, MATCH.y, flick, false);
-      return;
-    }
+    const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
 
     let reach = 0;
+    let fade = 1;
     if (st.state === 'striking') {
-      // Ease-out on the way in, so it arrives rather than slams.
       const pr = clamp01(st.strikeT / st.strikeTravel);
+      // Ease-out on the way down, so it arrives rather than slams.
       reach = 1 - (1 - pr) * (1 - pr);
+      // Materialise over the first third of the descent.
+      fade = clamp01(pr / 0.34);
     } else if (st.state === 'burning' || st.state === 'burnt') {
       const q = clamp01(st.burnT / STRIKE_RETREAT);
       reach = 1 - q * q;
+      fade = 1 - q * q;
     }
 
     const target = MATCH_TARGET[st.id] || MATCH_TARGET.en;
     const mirror = st.id === 'ur';
-    const mx = MATCH.x + (target.x - MATCH.x) * reach;
-    const my = MATCH.y + (target.y - MATCH.y) * reach;
-    drawMatch(ctx, 1, mirrorX(mx, mirror), my, flick, mirror);
+    const fromX = target.x + (mirror ? MATCH_DROP.dx : -MATCH_DROP.dx);
+    const fromY = target.y - MATCH_DROP.dy;
+    const mx = fromX + (target.x - fromX) * reach;
+    const my = fromY + (target.y - fromY) * reach;
+    drawMatch(ctx, fade, mirrorX(mx), my, flick, mirror);
   }
 
   /**
-   * A mirrored match is drawn through `scale(-1, 1)` about its own pivot, so
-   * the pivot itself has to be reflected back across the box centre for the
-   * head to end up where it was aimed.
+   * The match is mirrored with scale(-1, 1) about its OWN pivot, which is
+   * where the head sits — so the pivot already lands exactly where it was
+   * aimed and needs no further adjustment. An earlier version also reflected
+   * the coordinate across the box, which cancelled the aim out entirely and
+   * sent the match to light the other language's firework.
    */
-  function mirrorX(bx, mirror) {
-    return mirror ? SETPIECE_WIDTH - bx : bx;
+  function mirrorX(bx) {
+    return bx;
   }
 
   build();
@@ -647,6 +653,86 @@ export function createSetpiece(metrics, options = {}) {
     /** The chosen firework's colourway, so the flying rocket matches it. */
     get chosenLivery() {
       return chosen().livery;
+    },
+
+    /**
+     * The demonstration, drawn in SCREEN space by the renderer.
+     *
+     * A third, ghosted firework with its own match, up in the sky and clear
+     * of both real rockets. Putting the demo beside one of the two choices
+     * made it look like an instruction to pick that one; a rocket that is
+     * plainly neither of them can only be read as "here is how this works".
+     *
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {number} cx screen x of the ghost rocket's base
+     * @param {number} cy screen y of the ghost rocket's base
+     * @param {number} gs scale
+     */
+    drawChooserDemo(ctx, cx, cy, gs) {
+      const u = (time % DEMO_PERIOD) / DEMO_PERIOD;
+      const tipX = cx + 46 * gs;
+      const tipY = cy + 12 * gs;
+
+      ctx.save();
+
+      // The ghost rocket.
+      ctx.globalAlpha = 0.28;
+      drawRocket(ctx, cx, cy, gs, 0, {
+        stickLength: ROCKET_LOCAL.stick,
+        livery: LIVERY.ghost,
+      });
+
+      // Its fuse, curving out to a tip.
+      ctx.globalAlpha = 0.42;
+      ctx.strokeStyle = PALETTE.fuse;
+      ctx.lineWidth = FUSE.width * gs;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + 2 * gs);
+      ctx.quadraticCurveTo(cx + 24 * gs, cy + 22 * gs, tipX, tipY);
+      ctx.stroke();
+
+      // The ring on that tip, pulsing like the real ones.
+      ctx.globalAlpha = 0.5 - 0.22 * Math.cos((time / RING.period) * TAU);
+      ctx.strokeStyle = PALETTE.goldHi;
+      ctx.lineWidth = RING.width * gs;
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, RING.radius * gs * 0.8, 0, TAU);
+      ctx.stroke();
+
+      // The ghost match, coming down onto that fuse on a loop.
+      sampleTrack(DEMO_KEYS, u, demoOut);
+      if (demoOut.a > 0.01) {
+        const fromX = tipX + MATCH_DROP.dx * gs;
+        const fromY = tipY - MATCH_DROP.dy * gs;
+        const mx = fromX + (tipX - fromX) * demoOut.dx;
+        const my = fromY + (tipY - fromY) * demoOut.dy;
+        const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
+        ctx.globalAlpha = demoOut.a * 1.5;
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.scale(-1, 1);
+        ctx.rotate(MATCH.angle);
+        ctx.scale(gs, gs);
+        drawMatchBody(ctx, flick);
+        ctx.restore();
+      }
+
+      // The flash where it touches.
+      sampleTrack(FLASH_KEYS, u, flashOut);
+      if (flashOut.a > 0.01) {
+        for (let i = 0; i < flashSparks.length; i++) {
+          const sp = flashSparks[i];
+          ctx.globalAlpha = flashOut.a * sp.alpha;
+          ctx.fillStyle = sp.colour;
+          ctx.beginPath();
+          ctx.arc(tipX + sp.ox * gs, tipY + sp.oy * gs, sp.size * gs, 0, TAU);
+          ctx.fill();
+        }
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.restore();
     },
 
     /** The id of the station that was lit, or null while still choosing. */

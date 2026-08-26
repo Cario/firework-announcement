@@ -416,19 +416,7 @@ if (!canvasEl) {
    * rocket — through the same zoom transform the canvas uses — and parks the
    * text a fixed gap above it, in the clear band of grass.
    */
-  const PROMPT_GAP = 12;
 
-  function positionPrompt(zoom, focal) {
-    if (!prompt || !prompt.visible) return;
-
-    // Local y=48 is just above the rocket's nose cone.
-    const noseWorld = setpiece.localToWorld(SETPIECE_WIDTH / 2, 48);
-    const noseScreen = noseWorld.y - camera.y;
-    const rendered = focal.y + (noseScreen - focal.y) * zoom;
-
-    const bottomPx = Math.max(12, view.height - rendered + PROMPT_GAP);
-    prompt.el.style.bottom = `${Math.round(bottomPx)}px`;
-  }
 
   function render(dt) {
     director.update(dt);
@@ -447,7 +435,6 @@ if (!canvasEl) {
 
     lastZoom = zoom;
     lastFocal = focal;
-    positionPrompt(zoom, focal);
 
     ctx.save();
     if (zoomed) {
@@ -484,6 +471,22 @@ if (!canvasEl) {
     }
 
     ctx.restore();
+
+    // The language demonstration, in SCREEN space and deliberately outside
+    // the crop: a ghosted third firework up in the sky showing how lighting
+    // one works, clear of both real rockets so it cannot be mistaken for a
+    // recommendation to pick either.
+    if (director.state === 'idle' && prompt && prompt.visible) {
+      // A touch smaller than the real fireworks: it is an instruction, not a
+      // third option competing with them for attention.
+      const gs = Math.max(0.6, Math.min(1.5, view.width / 470));
+      setpiece.drawChooserDemo(
+        ctx,
+        view.width * 0.42,
+        view.height * 0.44,
+        gs
+      );
+    }
   }
 
   /**

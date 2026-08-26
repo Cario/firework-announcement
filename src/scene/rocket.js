@@ -79,6 +79,17 @@ export const LIVERY = Object.freeze({
     hi: PALETTE.rocketBlueHi,
     nose: PALETTE.rocketBlueHi,
   }),
+  /**
+   * The demonstration rocket. Deliberately neither red nor blue: it is not
+   * one of the two you can pick, it is a third, illustrative one, so it must
+   * not look like either choice.
+   */
+  ghost: Object.freeze({
+    lo: PALETTE.gold,
+    mid: PALETTE.goldHi,
+    hi: PALETTE.whiteSpark,
+    nose: PALETTE.goldHi,
+  }),
 });
 
 /**
@@ -188,6 +199,22 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   // language, so it has to be legible rather than decorative.
   if (options.label) {
     const size = options.labelSize || 9;
+
+    // A printed panel, not floating text: a recessed plate in the tube's own
+    // dark tone with a hairline gold edge, sitting between the two bands. The
+    // label then reads as part of the firework rather than as a caption that
+    // happens to be on top of it.
+    const plateH = size * 1.9;
+    const plateW = ROCKET.bodyWidth - 4;
+    const plateY = bodyTop + ROCKET.bodyHeight / 2 - plateH / 2;
+    ctx.fillStyle = livery.lo;
+    ctx.fillRect(-plateW / 2, plateY, plateW, plateH);
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.55;
+    ctx.strokeRect(-plateW / 2, plateY, plateW, plateH);
+    ctx.globalAlpha = 1;
+
     ctx.fillStyle = options.labelColor || PALETTE.goldHi;
     ctx.font = options.labelFont
       ? `${size}px ${options.labelFont}`

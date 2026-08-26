@@ -283,29 +283,25 @@ body {
 .prompt-pill {
   position: absolute;
   left: 50%;
-  /* `bottom` is set per-frame from JS, measured against the rendered top of
-     the firework, so the crop can never slide the text onto the rocket or the
-     ring. The value here is only a sensible first paint. */
-  bottom: 52%;
+  /* Top of the frame, clear of the scene entirely: this is the one thing to
+     read before anything else happens, and the sky is the only place with
+     room for it at a size an elderly reader can take in at a glance. */
+  top: 4%;
   transform: translateX(-50%);
   z-index: 20;
+  width: min(92vw, 640px);
 
-  /* No pill. Standalone text, lifted off the grass by a warm glow with a hard
-     dark shadow underneath it — the glow alone would smear against the light
-     blades, and the dark shadow alone would read as drop-shadowed UI. */
   color: var(--gold-hi);
+  text-align: center;
   text-shadow:
-    0 0 18px rgba(240, 194, 94, 0.55),
-    0 0 6px rgba(240, 194, 94, 0.7),
-    0 2px 6px rgba(3, 8, 20, 0.95),
-    0 0 2px rgba(3, 8, 20, 0.9);
+    0 0 18px rgba(240, 194, 94, 0.5),
+    0 0 6px rgba(240, 194, 94, 0.65),
+    0 2px 8px rgba(3, 8, 20, 0.95);
 
   font-family: 'Jost', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-weight: 500;
-  font-size: clamp(16px, 2.4vw, 22px);
-  letter-spacing: 0.01em;
-  line-height: 1.2;
-  white-space: nowrap;
+  font-size: clamp(22px, 5.6vw, 34px);
+  line-height: 1.25;
 
   pointer-events: none;
   transition: opacity 320ms ease;
@@ -313,7 +309,7 @@ body {
 }
 
 @keyframes prompt-breathe {
-  0%, 100% { opacity: 0.86; }
+  0%, 100% { opacity: 0.88; }
   50% { opacity: 1; }
 }
 
@@ -345,11 +341,21 @@ body {
 
 .prompt-line--urdu {
   font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', serif;
-  /* Nastaliq cascades diagonally, so it needs far more leading than a Latin
-     face at the same size, and it reads small at a matched pixel size. */
-  font-size: 1.18em;
-  line-height: 2;
-  margin-top: 0.15em;
+  /* Nastaliq reads smaller than Jost at a matched size, and its cascade needs
+     far more leading — at tighter values the tails of one line collide with
+     the heads of the next, which is what made the phone layout look cramped. */
+  font-size: 1.05em;
+  line-height: 2.35;
+  margin-top: 0.5em;
+  padding-bottom: 0.25em;
+}
+
+@media (max-width: 520px) {
+  .prompt-line--urdu {
+    font-size: 0.98em;
+    line-height: 2.5;
+    margin-top: 0.7em;
+  }
 }
 
 /* One label under each firework, positioned per-frame from main.js. */
