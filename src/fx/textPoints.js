@@ -68,6 +68,8 @@ const SCRIPTS = {
     padFactor: 0.4,
     lineHeight: 1.62,
     sizeScale: 1,
+    wordGap: 1,
+    jitterScale: 1,
   },
   ur: {
     family: URDU_FAMILY,
@@ -82,7 +84,19 @@ const SCRIPTS = {
     // pixel size, so matched font sizes do NOT look matched: the Urdu reads
     // visibly smaller side by side. Everything asking for a size gets scaled
     // by this, so the two languages appear equally large to the eye.
-    sizeScale: 1.38,
+    // Dropped from 1.38. Matching the two languages by optical size made the
+    // Urdu large enough that neighbouring words ran into each other, and a
+    // word you cannot separate from its neighbour is not more readable for
+    // being bigger. This sits just above parity and leaves room to breathe.
+    sizeScale: 1.1,
+    // Nastaliq needs far more air between words than its measured space
+    // advance provides: glyphs trail well past their nominal box, so adjacent
+    // words touch at a gap that would be generous in Latin type.
+    wordGap: 2.6,
+    // Its cascade already spreads a word vertically, so the altitude scatter
+    // that gives Latin lines their "different heights" read mostly just pushes
+    // Urdu words into the row above.
+    jitterScale: 0.4,
   },
 };
 
@@ -799,7 +813,7 @@ export function layoutLine(words, viewport, options) {
   mctx.font = fontString(MEASURE_REF, italic);
   const refWidths = new Array(list.length);
   for (let i = 0; i < list.length; i++) refWidths[i] = mctx.measureText(list[i]).width;
-  const refSpace = mctx.measureText(' ').width;
+  const refSpace = mctx.measureText(' ').width * script.wordGap;
 
   // The plan's CSS clamp, plus the narrow-viewport headroom described above.
   const cssClamp = clamp(vw * FONT_VW, FONT_MIN, FONT_MAX) * script.sizeScale;
@@ -831,7 +845,7 @@ export function layoutLine(words, viewport, options) {
   mctx.font = fontString(fontSize, italic);
   const wordWidths = new Array(list.length);
   for (let i = 0; i < list.length; i++) wordWidths[i] = mctx.measureText(list[i]).width;
-  const spaceWidth = mctx.measureText(' ').width;
+  const spaceWidth = mctx.measureText(' ').width * script.wordGap;
 
   let widest = 0;
   for (let r = 0; r < rowCount; r++) {
@@ -869,9 +883,9 @@ export function layoutLine(words, viewport, options) {
   // 1.62 pitch was in place; 0.18 leaves roughly a full glyph height of clear
   // air between rows at every size that was screenshotted.
   const jitterAmount =
-    rowCount > 1
+    (rowCount > 1
       ? Math.min(vh * ALTITUDE_JITTER, lineHeight * 0.18)
-      : vh * ALTITUDE_JITTER;
+      : vh * ALTITUDE_JITTER) * script.jitterScale;
 
   const rows = [];
   const flat = [];
