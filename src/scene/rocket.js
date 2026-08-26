@@ -32,23 +32,25 @@ import { PALETTE } from '../config/palette.js';
  * storyboard. Multiply by the `scale` argument of `drawRocket`.
  */
 export const ROCKET = {
-  bodyWidth: 20,
-  bodyHeight: 54,
-  noseHeight: 22,
-  noseWidth: 20,
+  // Widened from the storyboard's 20 so the language can be printed across
+  // the body and actually read. A firework tube is a chunky object anyway.
+  bodyWidth: 34,
+  bodyHeight: 58,
+  noseHeight: 24,
+  noseWidth: 34,
   /** Gold bands: 4 px tall, at 10 px and 36 px from the body top. */
   bandHeight: 4,
-  bandOffsets: [10, 36],
+  bandOffsets: [7, 46],
   bandAlpha: 0.9,
   /** Fins: 16 tall, splaying 9 out, rooted 1 px inside the body edge. */
-  finHeight: 16,
-  finSpread: 9,
+  finHeight: 17,
+  finSpread: 11,
   finInset: 1,
   stickWidth: 2.5,
   /** Stick length at rest; the launch phase lengthens it. */
   stickLength: 20,
   /** Nose apex above the local origin. */
-  topY: -76,
+  topY: -82,
 };
 
 /**
@@ -179,6 +181,22 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   ctx.lineTo(-halfNose, noseBaseY);
   ctx.closePath();
   ctx.fill();
+
+  // --- Language label ---------------------------------------------------
+  // Printed straight onto the tube, between the two gold bands, which is
+  // where a real firework carries its name. This is how the viewer picks a
+  // language, so it has to be legible rather than decorative.
+  if (options.label) {
+    const size = options.labelSize || 9;
+    ctx.fillStyle = options.labelColor || PALETTE.goldHi;
+    ctx.font = options.labelFont
+      ? `${size}px ${options.labelFont}`
+      : `500 ${size}px Jost, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.direction = options.labelRtl ? 'rtl' : 'ltr';
+    ctx.fillText(options.label, 0, bodyTop + ROCKET.bodyHeight / 2, ROCKET.bodyWidth - 5);
+  }
 
   ctx.restore();
 }

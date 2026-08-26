@@ -10,7 +10,8 @@
  * be told what to do in Urdu, and one who only reads English likewise, without
  * either of them having chosen anything yet. Each rocket also carries its own
  * label, positioned from its rendered location by `main.js`, so the choice is
- * legible even to someone who reads neither line of the instruction.
+ * legible even to someone who reads neither line of the instruction: the
+ * language itself is printed on each rocket.
  */
 
 import { CONTENT_EN, CONTENT_UR } from '../config/content.js';
@@ -34,7 +35,6 @@ function makeEl(tag, className, text, lang, dir) {
  * @param {HTMLElement} host usually `#ui`
  * @returns {{
  *   el: HTMLElement,
- *   labels: { en: HTMLElement, ur: HTMLElement },
  *   show: () => void,
  *   hide: () => void,
  *   visible: boolean,
@@ -51,22 +51,13 @@ export function createPrompt(host) {
   );
   host.appendChild(el);
 
-  // --- one label per firework ------------------------------------------
-  const labels = {
-    en: makeEl('div', 'lang-label', CONTENT_EN.label, 'en', 'ltr'),
-    ur: makeEl('div', 'lang-label lang-label--urdu', CONTENT_UR.label, 'ur', 'rtl'),
-  };
-  host.appendChild(labels.en);
-  host.appendChild(labels.ur);
-
-  const all = [el, labels.en, labels.ur];
+  const all = [el];
 
   let visible = true;
   let fadeId = 0;
 
   const api = {
     el,
-    labels,
 
     get visible() {
       return visible;

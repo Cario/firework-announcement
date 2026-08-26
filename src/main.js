@@ -357,7 +357,7 @@ if (!canvasEl) {
   let lastZoom = 1;
   let lastFocal = { x: 0, y: 0 };
 
-  const OPEN_SPAN = 0.62;
+  const OPEN_SPAN = 0.9;
   const OPEN_SPAN_V = 0.72;
 
   /**
@@ -371,7 +371,7 @@ if (!canvasEl) {
    * altogether — a camera pointed at the grass. Solving the mapping for a
    * fixed horizon gives a hard ceiling on the zoom instead.
    */
-  const HORIZON_TARGET = 0.42;
+  const HORIZON_TARGET = 0.3;
 
   function openZoom() {
     const pieceWidth = SETPIECE_WIDTH * metrics.setpieceScale;
@@ -430,27 +430,6 @@ if (!canvasEl) {
     prompt.el.style.bottom = `${Math.round(bottomPx)}px`;
   }
 
-  /**
-   * Park each language label under its own firework.
-   *
-   * Measured from the rendered position of that station's rocket, through the
-   * same crop the canvas uses, so the labels track their fireworks at every
-   * viewport size instead of drifting off them.
-   */
-  function positionLabels(zoom, focal) {
-    if (!prompt || !prompt.visible || !prompt.labels) return;
-    const anchors = setpiece.stationAnchors;
-    for (const a of anchors) {
-      const el = prompt.labels[a.id];
-      if (!el) continue;
-      const baseScreenY = a.y - camera.y;
-      const renderedY = focal.y + (baseScreenY - focal.y) * zoom;
-      const renderedX = focal.x + (a.x - focal.x) * zoom;
-      el.style.left = `${Math.round(renderedX)}px`;
-      el.style.top = `${Math.round(renderedY + 18 * zoom)}px`;
-    }
-  }
-
   function render(dt) {
     director.update(dt);
 
@@ -469,7 +448,6 @@ if (!canvasEl) {
     lastZoom = zoom;
     lastFocal = focal;
     positionPrompt(zoom, focal);
-    positionLabels(zoom, focal);
 
     ctx.save();
     if (zoomed) {

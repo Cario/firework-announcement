@@ -434,3 +434,84 @@ body {
   padding-top: 0.55em;
   padding-bottom: 0.75em;
 }
+
+/* --- Card: the fuller invitation ------------------------------------- */
+
+.invite-bismillah {
+  /* Arabic, in both cards. Naskh, not Nastaliq — this is how Quranic Arabic
+     is conventionally set, and Nastaliq's cascade fights the diacritics. */
+  font-family: 'Noto Naskh Arabic', 'Amiri', serif;
+  font-size: clamp(15px, 3.4vw, 19px);
+  line-height: 2;
+  color: var(--card-sub);
+  margin-bottom: 0.9em;
+}
+
+.invite-blessing {
+  font-size: clamp(13px, 2.9vw, 15px);
+  line-height: 1.65;
+  color: var(--card-sub);
+}
+
+.invite-blessing:last-of-type {
+  margin-bottom: 0.5em;
+}
+
+.invite-joiner {
+  font-size: clamp(12px, 2.7vw, 14px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--card-sub);
+  margin: 0.55em 0;
+}
+
+.invite-label {
+  font-size: clamp(11px, 2.5vw, 13px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--card-sub);
+  margin-top: 0.5em;
+}
+
+.invite-venue {
+  font-size: clamp(14px, 3.1vw, 16px);
+  line-height: 1.5;
+  color: var(--card-ink);
+}
+
+.invite-closing {
+  font-size: clamp(13px, 2.9vw, 15px);
+  line-height: 1.7;
+  color: var(--card-sub);
+}
+
+/* Urdu has no case and no small-caps tradition; uppercase/tracking on an
+   Arabic-script run does nothing useful and the tracking breaks joins. */
+.invite-card--urdu .invite-joiner,
+.invite-card--urdu .invite-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: inherit;
+  font-size: clamp(14px, 3vw, 17px);
+  line-height: 2;
+}
+
+.invite-card--urdu .invite-blessing,
+.invite-card--urdu .invite-venue,
+.invite-card--urdu .invite-closing {
+  font-family: inherit;
+  line-height: 2.15;
+  font-size: clamp(14px, 3.1vw, 17px);
+}
+
+/* The bismillah keeps Naskh even inside the Urdu card. */
+.invite-card--urdu .invite-bismillah {
+  font-family: 'Noto Naskh Arabic', 'Amiri', serif;
+}
+
+/* The card is now much longer; let it scroll rather than overflow on a
+   short screen, and keep the scroll inside the card itself. */
+.invite-card {
+  max-height: 82dvh;
+  overflow-y: auto;
+}

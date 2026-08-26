@@ -173,7 +173,8 @@ export function createDirector(deps) {
     { text: CONTENT.lines[0], size: 0.052, italic: true },
     { text: CONTENT.lines[1], size: 0.046, italic: true },
     { text: CONTENT.lines[2], size: 0.046, italic: true },
-    { text: `${CONTENT.dateLine} — ${CONTENT.locationLine}`, size: 0.044, italic: false },
+    { text: CONTENT.dateLine, size: 0.044, italic: false },
+    { text: CONTENT.venueLines.join(', '), size: 0.04, italic: false },
   ];
   let calmIndex = 0;
   let calmAlpha = 0;
@@ -543,16 +544,23 @@ export function createDirector(deps) {
         // The two lines sit a fixed distance apart, derived from the type size,
         // rather than at fixed fractions of the viewport — nothing goes between
         // them, so a percentage-based gap just opens a hole on a tall screen.
-        const gap = size * 1.5;
-        const block = view.height * 0.44;
+        // Rows sit a fixed distance apart, derived from the type size rather
+        // than from fractions of the viewport — nothing goes between them, so
+        // a percentage-based gap just opens a hole on a tall screen. The block
+        // is centred on however many rows there are, so adding the venue does
+        // not push the date off its mark.
+        const rowCount = payload.lines.length;
+        const gap = size * 1.55;
+        const block = view.height * 0.42 - ((rowCount - 1) * gap) / 2;
         payload.lines.forEach((text, row) => {
           const info = samplePointsInfo(text, {
-            fontSize: row === 0 ? size : size * 0.72,
+            // The date leads; the venue beneath it is a size down.
+            fontSize: row === 0 ? size : size * 0.7,
             italic: false,
             maxWidth: view.width * 0.84,
             maxPoints: Math.min(460, Math.floor(particles.max * 0.22)),
           });
-          const y = row === 0 ? block : block + gap;
+          const y = block + row * gap;
           const group = nextTextGroup();
           emitTextResolve({
             system: particles,

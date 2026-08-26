@@ -21,6 +21,7 @@ import { PALETTE } from '../config/palette.js';
 import { createRng, SEEDS } from '../engine/rng.js';
 import { easeInOutCubic, easeOutCubic, clamp01 } from '../engine/easing.js';
 import { drawRocket, ROCKET, LIVERY } from './rocket.js';
+import { getContent } from '../config/content.js';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -32,15 +33,30 @@ const DEG = Math.PI / 180;
  * Every local coordinate below is inside a single station's box; a station's
  * `offset` shifts it into place.
  */
-export const STATION_WIDTH = 340;
-export const STATION_GAP = 28;
+/**
+ * A station is now just a rocket, its fuse and its tip — the match moved out
+ * to the middle, where a single one can reach either fuse. That is what makes
+ * the box narrow enough for the rockets to be a large fraction of it, which is
+ * in turn what makes the language printed on them readable.
+ *
+ * The right-hand station is MIRRORED, so both fuses run inward and the one
+ * match sits between the two tips. Only the coordinates are flipped, never the
+ * canvas transform — otherwise the label on the tube would come out backwards.
+ */
+export const STATION_WIDTH = 70;
+export const STATION_GAP = 50;
 export const SETPIECE_WIDTH = STATION_WIDTH * 2 + STATION_GAP;
 export const SETPIECE_HEIGHT = 180;
 
 /** The two fireworks, left to right. `id` is the language they choose. */
 export const STATION_DEFS = Object.freeze([
-  Object.freeze({ id: 'en', offset: 0, livery: 'red' }),
-  Object.freeze({ id: 'ur', offset: STATION_WIDTH + STATION_GAP, livery: 'blue' }),
+  Object.freeze({ id: 'en', offset: 0, flip: false, livery: 'red' }),
+  Object.freeze({
+    id: 'ur',
+    offset: STATION_WIDTH + STATION_GAP,
+    flip: true,
+    livery: 'blue',
+  }),
 ]);
 
 /** Bottom of the box, as a fraction of the view height above the frame edge. */
@@ -48,52 +64,59 @@ const BOTTOM_RATIO = 0.08;
 
 /** Fuse: cubic from the rocket base, dipping down and right to the tip. */
 const FUSE = {
-  x0: 92,
+  x0: 19,
   y0: 158,
-  c1x: 124,
-  c1y: 166,
-  c2x: 164,
-  c2y: 164,
-  x1: 198,
-  y1: 150,
-  width: 2.5,
+  c1x: 32,
+  c1y: 167,
+  c2x: 48,
+  c2y: 166,
+  x1: 62,
+  y1: 152,
+  width: 2.2,
 };
 
 /** Sample count for the fuse path. Plan 5.2: ~60 points. */
 const FUSE_SAMPLES = 60;
 
 /** Rocket: body-base centre, left of the set-piece centre. */
-const ROCKET_LOCAL = { x: 92, y: 137, stick: 20 };
+const ROCKET_LOCAL = { x: 19, y: 137, stick: 18 };
 
 /** Unlit fuse tip: 9 px across, grey. */
-const TIP = { x: 199.5, y: 149.5, r: 4.5 };
+const TIP = { x: 62.5, y: 151.5, r: 4 };
 
 /** Pulsing ring on the tip: 78 px across, 3 px gold, 8% fill, 13 px halo. */
 const RING = {
-  x: 199,
-  y: 150,
-  radius: 39,
-  width: 3,
+  x: 62,
+  y: 152,
+  radius: 21,
+  width: 2,
   fillAlpha: 0.08,
-  halo: 13,
+  halo: 7,
   haloAlpha: 0.32,
   period: 1.8,
 };
 
-/** Match at rest, pivoting on the left end of its 66 x 8 stick. */
+/**
+ * The single match, at rest in the middle of the box between the two fuses.
+ *
+ * Coordinates here are BOX-local, not station-local: there is only one of it,
+ * and it has to be able to reach either side. It pivots on the left end of its
+ * stick, which is where the head and flame sit, so reaching the right-hand
+ * fuse means drawing it mirrored.
+ */
 const MATCH = {
-  x: 262,
-  y: 128,
+  x: 95,
+  y: 116,
   angle: 24 * DEG,
-  length: 66,
-  thickness: 8,
-  headX: 4.5,
-  headR: 7.5,
+  length: 34,
+  thickness: 4.6,
+  headX: 2.6,
+  headR: 4.3,
   flame: {
-    cx: 5.5,
-    cy: -16,
-    width: 13,
-    height: 24,
+    cx: 3.2,
+    cy: -9,
+    width: 7.5,
+    height: 13.5,
     /** border-radius 50% / 62% top, 38% bottom — a teardrop, tip upward. */
     topRatio: 0.62,
     period: 1.1,
@@ -101,6 +124,9 @@ const MATCH = {
     stretch: 0.12,
   },
 };
+
+/** Where the match head must land to light each fuse, in box coordinates. */
+const MATCH_TARGET = { en: { x: 62, y: 150 }, ur: { x: 128, y: 150 } };
 
 /** Ghost-match demo, one loop every 3.6 s. Plan 3.5. */
 const DEMO_PERIOD = 3.6;
@@ -112,10 +138,10 @@ const DEMO_PERIOD = 3.6;
  */
 const DEMO_KEYS = [
   { t: 0.0, a: 0, dx: 0, dy: 0 },
-  { t: 0.12, a: 0.42, dx: -8, dy: 4 },
-  { t: 0.4, a: 0.5, dx: -62, dy: 26 },
-  { t: 0.58, a: 0.5, dx: -62, dy: 26 },
-  { t: 0.8, a: 0, dx: -20, dy: 8 },
+  { t: 0.12, a: 0.42, dx: 0.13, dy: 0.13 },
+  { t: 0.4, a: 0.5, dx: 1, dy: 1 },
+  { t: 0.58, a: 0.5, dx: 1, dy: 1 },
+  { t: 0.8, a: 0, dx: 0.32, dy: 0.32 },
   { t: 1.0, a: 0, dx: 0, dy: 0 },
 ];
 
@@ -130,7 +156,7 @@ const FLASH_KEYS = [
 ];
 
 /** The flash itself: 14 sparks at the tip. Plan 3.5. */
-const FLASH = { x: 199, y: 149, count: 14, rMin: 6, rMax: 20, size: 2.4 };
+const FLASH = { x: 62, y: 151, count: 14, rMin: 3, rMax: 11, size: 1.5 };
 
 /** Fuse burn duration once lit, in seconds. Timeline 2.3: 0 -> 1.40. */
 export const FUSE_BURN_SECONDS = 1.4;
@@ -143,7 +169,6 @@ export const FUSE_BURN_SECONDS = 1.4;
  */
 const STRIKE_TRAVEL = 0.42;
 const STRIKE_RETREAT = 0.45;
-const STRIKE_TO = { dx: -62, dy: 26 };
 
 /** Interpolate a keyframe track with CSS `ease-in-out` between stops. */
 function sampleTrack(keys, u, out) {
@@ -220,7 +245,9 @@ export function createSetpiece(metrics, options = {}) {
   const stations = STATION_DEFS.map((def) => ({
     id: def.id,
     offset: def.offset,
+    flip: def.flip,
     livery: LIVERY[def.livery],
+    label: getContent(def.id),
     fusePath: [],
     state: 'idle',
     burnSeconds: FUSE_BURN_SECONDS,
@@ -248,9 +275,22 @@ export function createSetpiece(metrics, options = {}) {
       m.worldBottom - m.viewHeight * BOTTOM_RATIO - SETPIECE_HEIGHT * scale;
   }
 
-  /** Station-local x -> world x. */
+  /**
+   * Station-local x -> world x.
+   *
+   * The right-hand station is mirrored so its fuse runs inward toward the
+   * shared match. Only the coordinate is flipped; the canvas transform is
+   * left alone, so the label printed on that rocket stays the right way round.
+   */
   function toWorldX(lx, st) {
-    return originX + ((st ? st.offset : 0) + lx) * scale;
+    if (!st) return originX + lx * scale;
+    const local = st.flip ? STATION_WIDTH - lx : lx;
+    return originX + (st.offset + local) * scale;
+  }
+
+  /** Box-local x -> world x, for the match, which belongs to no station. */
+  function boxToWorldX(bx) {
+    return originX + bx * scale;
   }
 
   function toWorldY(ly) {
@@ -320,10 +360,14 @@ export function createSetpiece(metrics, options = {}) {
    * space. The pivot is the left end of the stick, which is also where the
    * head and its flame live.
    */
-  function drawMatch(ctx, ctxAlpha, localX, localY, flick, st) {
+  function drawMatch(ctx, ctxAlpha, boxX, boxY, flick, mirror) {
     ctx.save();
     ctx.globalAlpha = ctxAlpha;
-    ctx.translate(toWorldX(localX, st), toWorldY(localY));
+    ctx.translate(boxToWorldX(boxX), toWorldY(boxY));
+    // Reaching the right-hand fuse means holding the match the other way
+    // round. Mirroring the whole assembly is exactly that, and the flame is
+    // counter-rotated below so it still stands upright either way.
+    if (mirror) ctx.scale(-1, 1);
     ctx.rotate(MATCH.angle);
     ctx.scale(scale, scale);
 
@@ -399,13 +443,23 @@ export function createSetpiece(metrics, options = {}) {
 
     // --- Rocket ------------------------------------------------------------
     if (st.rocketVisible) {
+      const urdu = st.id === 'ur';
       drawRocket(
         ctx,
         toWorldX(ROCKET_LOCAL.x, st),
         toWorldY(ROCKET_LOCAL.y),
         scale,
         0,
-        { stickLength: ROCKET_LOCAL.stick, livery: st.livery }
+        {
+          stickLength: ROCKET_LOCAL.stick,
+          livery: st.livery,
+          // The language, printed on the tube. Nastaliq needs a larger size
+          // than Jost to read as the same size, and sits high in its box.
+          label: st.label.label,
+          labelSize: urdu ? 13 : 9,
+          labelFont: urdu ? '"Noto Nastaliq Urdu", serif' : null,
+          labelRtl: urdu,
+        }
       );
     }
 
@@ -486,38 +540,65 @@ export function createSetpiece(metrics, options = {}) {
         ctx.globalAlpha = 1;
       }
 
-      // The ghosted match itself.
-      sampleTrack(DEMO_KEYS, u, demoOut);
-      if (demoOut.a > 0.01) {
-        const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
-        drawMatch(ctx, demoOut.a, MATCH.x + demoOut.dx, MATCH.y + demoOut.dy, flick, st);
+    }
+  }
+
+  /**
+   * The one match, drawn in box space.
+   *
+   * While the viewer is still choosing it leans toward each fuse in turn — a
+   * ghost to the left on one cycle, to the right on the next — which is what
+   * says "this one match can light either of them". Once a firework is chosen
+   * it makes the real trip to that fuse and withdraws.
+   */
+  function drawTheMatch(ctx) {
+    const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
+    const st = chosen();
+    const committed = chosenId !== null && st.state !== 'idle' && st.state !== 'armed';
+
+    if (!committed) {
+      // Idle: alternate the demo between the two fuses.
+      const cycle = Math.floor(time / DEMO_PERIOD);
+      const target = cycle % 2 === 0 ? MATCH_TARGET.en : MATCH_TARGET.ur;
+      const mirror = cycle % 2 !== 0;
+      const u = (time % DEMO_PERIOD) / DEMO_PERIOD;
+
+      if (stations[0].demoRunning) {
+        sampleTrack(DEMO_KEYS, u, demoOut);
+        if (demoOut.a > 0.01) {
+          const gx = MATCH.x + (target.x - MATCH.x) * demoOut.dx;
+          const gy = MATCH.y + (target.y - MATCH.y) * demoOut.dy;
+          drawMatch(ctx, demoOut.a, mirrorX(gx, mirror), gy, flick, mirror);
+        }
       }
+      drawMatch(ctx, 1, MATCH.x, MATCH.y, flick, false);
+      return;
     }
 
-    // --- The real, lit match ------------------------------------------------
-    // At rest until the tap, then in to the fuse tip and back out again.
-    if (st.state !== 'launched') {
-      const flick = 0.5 - 0.5 * Math.cos((time / MATCH.flame.period) * TAU);
-
-      let reach = 0;
-      if (st.state === 'striking') {
-        // Ease-out on the way in, so it arrives rather than slams.
-        const pr = clamp01(st.strikeT / st.strikeTravel);
-        reach = 1 - (1 - pr) * (1 - pr);
-      } else if (st.state === 'burning' || st.state === 'burnt') {
-        const q = clamp01(st.burnT / STRIKE_RETREAT);
-        reach = 1 - q * q;
-      }
-
-      drawMatch(
-        ctx,
-        1,
-        MATCH.x + STRIKE_TO.dx * reach,
-        MATCH.y + STRIKE_TO.dy * reach,
-        flick,
-        st
-      );
+    let reach = 0;
+    if (st.state === 'striking') {
+      // Ease-out on the way in, so it arrives rather than slams.
+      const pr = clamp01(st.strikeT / st.strikeTravel);
+      reach = 1 - (1 - pr) * (1 - pr);
+    } else if (st.state === 'burning' || st.state === 'burnt') {
+      const q = clamp01(st.burnT / STRIKE_RETREAT);
+      reach = 1 - q * q;
     }
+
+    const target = MATCH_TARGET[st.id] || MATCH_TARGET.en;
+    const mirror = st.id === 'ur';
+    const mx = MATCH.x + (target.x - MATCH.x) * reach;
+    const my = MATCH.y + (target.y - MATCH.y) * reach;
+    drawMatch(ctx, 1, mirrorX(mx, mirror), my, flick, mirror);
+  }
+
+  /**
+   * A mirrored match is drawn through `scale(-1, 1)` about its own pivot, so
+   * the pivot itself has to be reflected back across the box centre for the
+   * head to end up where it was aimed.
+   */
+  function mirrorX(bx, mirror) {
+    return mirror ? SETPIECE_WIDTH - bx : bx;
   }
 
   build();
@@ -701,6 +782,7 @@ export function createSetpiece(metrics, options = {}) {
       ctx.save();
       ctx.translate(0, -top);
       for (const st of stations) drawStation(ctx, st);
+      drawTheMatch(ctx);
       ctx.globalAlpha = 1;
       ctx.restore();
     },

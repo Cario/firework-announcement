@@ -2,10 +2,9 @@
  * Every word on the site, in both languages. Single source of truth.
  *
  * The firework choreography is DERIVED from these strings — `timeline.js`
- * splits each line on spaces and schedules one shell, one burst and one sound
- * per word. So a line with more words automatically gets more fireworks, and
- * the two languages need no separate tuning: Urdu's different word counts flow
- * through to the sequence on their own.
+ * splits each sky line on spaces and schedules one shell, one burst and one
+ * sound per word. So a line with more words automatically gets more fireworks,
+ * and the two languages need no separate tuning.
  *
  * URDU NOTES, because the script is not just "English with different glyphs":
  *
@@ -13,15 +12,21 @@
  *    layout, which packs its rows from the right.
  *  - Letters change shape according to their neighbours and join into
  *    ligatures. Splitting on spaces is safe (shaping never crosses a space),
- *    but splitting *within* a word would destroy it — and so would drawing a
- *    word character by character, which is why the tracked-letterspacing path
- *    used for "SURPRISE" is disabled for Urdu.
- *  - It is set in Nastaliq, which cascades diagonally downward. Glyphs
- *    routinely fall far outside the box a Latin face of the same size would
- *    occupy, so the sampler is given extra vertical room for it.
- *  - `ِ` (zer/kasra) in "تقریبِ" marks an izafat construction. It is a
- *    combining mark, not a separate letter, and must stay attached.
+ *    but drawing a word character by character would destroy it, which is why
+ *    the tracked-letterspacing path used for "SURPRISE" is disabled for Urdu.
+ *  - It is set in Nastaliq, which cascades diagonally downward and reads
+ *    smaller than a Latin face at the same pixel size — both compensated for
+ *    in `fx/textPoints.js`.
+ *  - `ِ` (zer) in "تقریبِ" and "دخترِ" marks an izafat construction. It is a
+ *    combining mark, not a letter, and must stay attached to its word.
+ *
+ * The bismillah is Arabic, not Urdu, and appears on BOTH cards. It is set in
+ * Naskh rather than Nastaliq, which is how Quranic Arabic is conventionally
+ * typeset.
  */
+
+/** Arabic, shared by both cards. */
+export const BISMILLAH = 'بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ';
 
 /** English. */
 export const CONTENT_EN = {
@@ -31,30 +36,39 @@ export const CONTENT_EN = {
   htmlLang: 'en',
 
   surprise: 'SURPRISE',
+
+  /** The three sky lines, one firework per word. */
   lines: [
     'You are invited to the Nikah ceremony',
     'of Muhammad Asjad, the beloved son of Ahmed Shemail and Munazzah Asif',
     'with Neha Kashif, the beloved daughter of Kashif Ali and Aisha Kashif',
   ],
+
+  /** The closing burst: when, then where. */
   dateLine: 'January 1, 2027',
-  locationLine: 'Location to be announced',
+  venueLines: ['Minha Ballroom', 'Shah Faisal Colony, Block 3, Karachi'],
 
   card: {
-    eyebrow: 'Nikah',
-    intro: 'You are invited to the Nikah ceremony',
+    bismillah: BISMILLAH,
+    blessing: [
+      'With the blessings of Allah (SWT),',
+      'you are cordially invited to join us in celebrating',
+      'the blessed Nikah ceremony of',
+    ],
     groom: 'Muhammad Asjad',
-    groomParents: 'beloved son of Ahmed Shemail & Munazzah Asif',
+    groomParents: 'Cherished son of Ahmed Shemail & Munazzah Asif',
+    joiner: 'With',
     bride: 'Neha Kashif',
-    brideParents: 'beloved daughter of Kashif Ali & Aisha Kashif',
+    brideParents: 'Beloved daughter of Kashif Ali & Aisha Kashif',
+    dateLabel: 'On',
     date: 'January 1, 2027',
-    location: 'Location to be announced',
+    venueLabel: 'At',
+    venue: ['Minha Ballroom', 'Shah Faisal Colony, Block 3', 'Karachi'],
+    closing: '',
   },
 
-  prompt: 'Tap the fuse to light it',
-  chooser: 'Tap a firework to begin',
+  chooser: 'Choose your language',
   replay: 'Watch again',
-  muteOn: 'Mute sound',
-  muteOff: 'Unmute sound',
 };
 
 /** Urdu. */
@@ -65,30 +79,37 @@ export const CONTENT_UR = {
   htmlLang: 'ur',
 
   surprise: 'سرپرائز',
+
   lines: [
-    'آپ کو تقریبِ نکاح میں مدعو کیا جاتا ہے',
-    'محمد اسجد، احمد شمائل اور منزہ آصف کے لختِ جگر',
-    'نیہا کاشف، کاشف علی اور عائشہ کاشف کی لختِ جگر کے ساتھ',
+    'آپ کو نہایت شادمانی کے ساتھ تقریبِ نکاح میں شرکت کی دعوت دی جاتی ہے',
+    'محمد اسجد، فرزند احمد شمائل و منزہ آصف',
+    'بہمراہ نِہٰا کاشف، دخترِ کاشف علی و عائشہ کاشف',
   ],
-  dateLine: 'یکم جنوری ۲۰۲۷',
-  locationLine: 'مقام کا اعلان بعد میں کیا جائے گا',
+
+  dateLine: 'یکم جنوری، ۲۰۲۷ء',
+  venueLines: ['منہا بال روم', 'شاہ فیصل کالونی، بلاک ۳، کراچی'],
 
   card: {
-    eyebrow: 'نکاح',
-    intro: 'آپ کو تقریبِ نکاح میں مدعو کیا جاتا ہے',
+    bismillah: BISMILLAH,
+    blessing: [
+      'اللہ تعالیٰ کے فضل و کرم اور برکتوں کے ساتھ،',
+      'آپ کو نہایت شادمانی کے ساتھ تقریبِ نکاح میں',
+      'شرکت کی دعوت دی جاتی ہے۔',
+    ],
     groom: 'محمد اسجد',
-    groomParents: 'احمد شمائل و منزہ آصف کے لختِ جگر',
-    bride: 'نیہا کاشف',
-    brideParents: 'کاشف علی و عائشہ کاشف کی لختِ جگر',
-    date: 'یکم جنوری ۲۰۲۷',
-    location: 'مقام کا اعلان بعد میں کیا جائے گا',
+    groomParents: 'فرزند احمد شمائل و منزہ آصف',
+    joiner: 'بہمراہ',
+    bride: 'نِہٰا کاشف',
+    brideParents: 'دخترِ کاشف علی و عائشہ کاشف',
+    dateLabel: 'بتاریخ',
+    date: 'یکم جنوری، ۲۰۲۷ء',
+    venueLabel: 'بمقام',
+    venue: ['منہا بال روم', 'شاہ فیصل کالونی، بلاک ۳', 'کراچی'],
+    closing: 'آپ کی شرکت ہمارے لیے باعثِ مسرت و تشکر ہوگی',
   },
 
-  prompt: 'فتیلہ جلانے کے لیے دبائیں',
-  chooser: 'شروع کرنے کے لیے کسی آتش بازی کو دبائیں',
+  chooser: 'اپنی زبان منتخب کریں',
   replay: 'دوبارہ دیکھیں',
-  muteOn: 'آواز بند کریں',
-  muteOff: 'آواز چالو کریں',
 };
 
 /** Both, in the order the two fireworks stand on the ground: English, Urdu. */
@@ -102,8 +123,5 @@ export function getContent(lang) {
   return lang === 'ur' ? CONTENT_UR : CONTENT_EN;
 }
 
-/**
- * Back-compat: the modules written before the site was bilingual import
- * `CONTENT` directly. It stays pointed at English.
- */
+/** Back-compat for modules written before the site was bilingual. */
 export const CONTENT = CONTENT_EN;

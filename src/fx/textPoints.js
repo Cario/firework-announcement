@@ -67,6 +67,7 @@ const SCRIPTS = {
     heightFactor: 2,
     padFactor: 0.4,
     lineHeight: 1.62,
+    sizeScale: 1,
   },
   ur: {
     family: URDU_FAMILY,
@@ -77,6 +78,11 @@ const SCRIPTS = {
     heightFactor: 3.4,
     padFactor: 0.7,
     lineHeight: 2.05,
+    // Nastaliq sets a much smaller x-height than a Latin face at the same
+    // pixel size, so matched font sizes do NOT look matched: the Urdu reads
+    // visibly smaller side by side. Everything asking for a size gets scaled
+    // by this, so the two languages appear equally large to the eye.
+    sizeScale: 1.38,
   },
 };
 
@@ -334,7 +340,7 @@ export function samplePointsInfo(text, opts) {
   const italic = o.italic === true;
   // Tracking is silently dropped for joining scripts — see SCRIPTS above.
   const letterSpacing = script.allowTracking ? o.letterSpacing || 0 : 0;
-  const requested = o.fontSize === undefined ? FONT_MAX : o.fontSize;
+  const requested = (o.fontSize === undefined ? FONT_MAX : o.fontSize) * script.sizeScale;
   const maxWidth = o.maxWidth === undefined ? 0 : o.maxWidth;
   const maxPoints = o.maxPoints === undefined ? 900 : o.maxPoints;
 
@@ -796,8 +802,8 @@ export function layoutLine(words, viewport, options) {
   const refSpace = mctx.measureText(' ').width;
 
   // The plan's CSS clamp, plus the narrow-viewport headroom described above.
-  const cssClamp = clamp(vw * FONT_VW, FONT_MIN, FONT_MAX);
-  const sizeCap = Math.max(cssClamp, Math.min(FONT_MAX, vw / 9));
+  const cssClamp = clamp(vw * FONT_VW, FONT_MIN, FONT_MAX) * script.sizeScale;
+  const sizeCap = Math.max(cssClamp, Math.min(FONT_MAX * script.sizeScale, vw / 9));
 
   // Row budget. Long lines get a tightened budget so they always break into at
   // least `minRows` rows; both terms scale linearly with font size, so the row

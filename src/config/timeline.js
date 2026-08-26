@@ -390,7 +390,7 @@ export function buildSchedule(content) {
     t: T.DATELINE_START,
     kind: 'datelineResolve',
     payload: {
-      lines: [content.dateLine, content.locationLine],
+      lines: [content.dateLine, ...content.venueLines],
       colors: DATELINE_COLORS,
       duration: T.DATELINE_END - T.DATELINE_START,
     },

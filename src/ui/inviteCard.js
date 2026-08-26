@@ -100,7 +100,6 @@ export function createInviteCard(options = {}) {
   // are properties of the card element rather than of any individual string.
   const CONTENT = options.content || CONTENT_EN;
   const c = CONTENT.card;
-  const EYEBROW = c.eyebrow;
 
   // --- structure ------------------------------------------------------
 
@@ -123,16 +122,40 @@ export function createInviteCard(options = {}) {
   card.dir = CONTENT.dir;
   if (CONTENT.lang === 'ur') card.classList.add('invite-card--urdu');
 
-  card.appendChild(makeLine('p', 'invite-eyebrow', EYEBROW));
-  card.appendChild(makeLine('h1', 'invite-intro', c.intro));
+  // The bismillah is Arabic in BOTH cards, so it carries its own lang and
+  // direction regardless of which language the rest of the card is in, and
+  // is set in Naskh rather than Nastaliq as Quranic Arabic conventionally is.
+  const bismillah = makeLine('p', 'invite-bismillah', c.bismillah);
+  bismillah.lang = 'ar';
+  bismillah.dir = 'rtl';
+  card.appendChild(bismillah);
+
+  for (const line of c.blessing) {
+    card.appendChild(makeLine('p', 'invite-blessing', line));
+  }
+
   card.appendChild(makeLine('p', 'invite-name', c.groom));
   card.appendChild(makeLine('p', 'invite-parents', c.groomParents));
-  card.appendChild(makeRule());
+
+  card.appendChild(makeLine('p', 'invite-joiner', c.joiner));
+
   card.appendChild(makeLine('p', 'invite-name', c.bride));
   card.appendChild(makeLine('p', 'invite-parents', c.brideParents));
+
   card.appendChild(makeRule());
+
+  card.appendChild(makeLine('p', 'invite-label', c.dateLabel));
   card.appendChild(makeLine('p', 'invite-date', c.date));
-  card.appendChild(makeLine('p', 'invite-location', c.location));
+
+  card.appendChild(makeLine('p', 'invite-label', c.venueLabel));
+  for (const line of c.venue) {
+    card.appendChild(makeLine('p', 'invite-venue', line));
+  }
+
+  if (c.closing) {
+    card.appendChild(makeRule());
+    card.appendChild(makeLine('p', 'invite-closing', c.closing));
+  }
 
   // A real <button>: Enter and Space activate it with no extra keydown
   // handler, and it is in the tab order for free.
@@ -155,15 +178,20 @@ export function createInviteCard(options = {}) {
   // rewritten; '. ' is the separator so a screen reader pauses between
   // lines instead of running them together.
   const A11Y_TEXT = [
-    EYEBROW,
-    c.intro,
+    ...c.blessing,
     c.groom,
     c.groomParents,
+    c.joiner,
     c.bride,
     c.brideParents,
+    c.dateLabel,
     c.date,
-    c.location,
-  ].join('. ');
+    c.venueLabel,
+    ...c.venue,
+    c.closing,
+  ]
+    .filter(Boolean)
+    .join('. ');
 
   // --- behaviour --------------------------------------------------------
 
