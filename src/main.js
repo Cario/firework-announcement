@@ -24,6 +24,8 @@ import { drawDisplayText } from './fx/textPoints.js';
 import { createPrompt } from './ui/prompt.js';
 import { createMuteToggle } from './ui/muteToggle.js';
 import { createInviteCard } from './ui/inviteCard.js';
+import { createLoader } from './ui/loader.js';
+import { createBackdrop } from './scene/backdrop.js';
 
 import * as sound from './audio/sound.js';
 import { createDirector } from './sequence/director.js';
@@ -60,6 +62,7 @@ if (!canvasEl) {
   let ground = null;
   let clouds = null;
   let setpiece = null;
+  let backdrop = null;
 
   // Declared up here because `relayout` runs before the director exists — the
   // first call happens while the canvas is still being set up.
@@ -88,11 +91,15 @@ if (!canvasEl) {
       ground = createGround(metrics);
       clouds = createClouds(metrics);
       setpiece = createSetpiece(metrics);
+      // One waiting firework per word the longest announcement will spell out,
+      // so every shell that goes up has somewhere on the ground it came from.
+      backdrop = createBackdrop(metrics, { rocketCount: 32, mortarCount: 6 });
     } else {
       sky.resize(metrics);
       ground.resize(metrics);
       clouds.resize(metrics);
       setpiece.resize(metrics);
+      backdrop.resize(metrics);
     }
 
     if (!director || director.state === 'idle') camera.reset();
@@ -203,7 +210,17 @@ if (!canvasEl) {
    * Input — the whole viewport is the target
    * ---------------------------------------------------------------- */
 
-  let armed = true;
+  // Nothing is armed until the loading screen is dismissed: a stray tap that
+  // lands as the overlay fades would otherwise light a firework the viewer
+  // never saw, and choose their language for them.
+  let armed = false;
+
+  const loader = createLoader(stageEl || document.body, {
+    onContinue: () => {
+      armed = true;
+      primeAudio();
+    },
+  });
 
   /**
    * Audio unlock, separate from ignition.
@@ -446,6 +463,7 @@ if (!canvasEl) {
     sky.draw(ctx, camera);
     clouds.draw(ctx, camera, 'behind');
     ground.draw(ctx, camera);
+    backdrop.draw(ctx, camera);
     setpiece.draw(ctx, camera);
 
     if (director.reducedMotion) {
@@ -472,21 +490,6 @@ if (!canvasEl) {
 
     ctx.restore();
 
-    // The language demonstration, in SCREEN space and deliberately outside
-    // the crop: a ghosted third firework up in the sky showing how lighting
-    // one works, clear of both real rockets so it cannot be mistaken for a
-    // recommendation to pick either.
-    if (director.state === 'idle' && prompt && prompt.visible) {
-      // A touch smaller than the real fireworks: it is an instruction, not a
-      // third option competing with them for attention.
-      const gs = Math.max(0.6, Math.min(1.5, view.width / 470));
-      setpiece.drawChooserDemo(
-        ctx,
-        view.width * 0.42,
-        view.height * 0.44,
-        gs
-      );
-    }
   }
 
   /**

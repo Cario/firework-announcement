@@ -137,6 +137,26 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   if (angle !== 0) ctx.rotate(angle);
   if (scale !== 1) ctx.scale(scale, scale);
 
+  // --- Planted on the ground ---------------------------------------------
+  // A stick that simply stops in mid-air makes the whole firework look like
+  // a sticker laid over the grass. A shadow pooled at its foot and a small
+  // mound of earth around it are what sell the thing as standing IN the
+  // meadow rather than on top of it.
+  if (options.grounded) {
+    const footY = stickLength;
+    ctx.globalAlpha = 0.32;
+    ctx.fillStyle = PALETTE.grass;
+    ctx.beginPath();
+    ctx.ellipse(0, footY, ROCKET.bodyWidth * 0.62, ROCKET.bodyWidth * 0.17, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = PALETTE.grassHi;
+    ctx.beginPath();
+    ctx.ellipse(0, footY - 1, ROCKET.bodyWidth * 0.4, ROCKET.bodyWidth * 0.12, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
   // --- Stick ------------------------------------------------------------
   // Starts half a pixel above the base so it can never separate from it.
   ctx.fillStyle = PALETTE.stick;
@@ -222,7 +242,46 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.direction = options.labelRtl ? 'rtl' : 'ltr';
-    ctx.fillText(options.label, 0, bodyTop + ROCKET.bodyHeight / 2, ROCKET.bodyWidth - 5);
+
+    const labelY = bodyTop + ROCKET.bodyHeight / 2;
+    if (options.labelRtl) {
+      // Arabic script joins; it has to be drawn as one run or it falls apart.
+      ctx.fillText(options.label, 0, labelY, plateW - 4);
+    } else {
+      // Latin is set glyph by glyph so each one can be nudged down toward the
+      // tube's edges. Text laid flat across a cylinder is the single thing
+      // that makes a label look typed on afterwards rather than printed on
+      // the thing itself; following the curve is what fixes it.
+      const text = options.label;
+      const tracking = size * 0.09;
+      let total = 0;
+      for (const ch of text) total += ctx.measureText(ch).width + tracking;
+      total -= tracking;
+      const fit = Math.min(1, (plateW - 5) / total);
+      let pen = (-total * fit) / 2;
+      for (const ch of text) {
+        const w = ctx.measureText(ch).width * fit;
+        const centre = pen + w / 2;
+        // Parabolic sag: flat in the middle, dropping toward both edges.
+        const k = centre / (ROCKET.bodyWidth / 2);
+        ctx.save();
+        ctx.translate(centre, labelY + k * k * size * 0.22);
+        ctx.scale(fit, fit);
+        ctx.fillText(ch, 0, 0);
+        ctx.restore();
+        pen += w + tracking * fit;
+      }
+    }
+
+    // The tube's own shading, laid back over the label, so the print darkens
+    // toward the edges exactly as the surface under it does.
+    const shade = ctx.createLinearGradient(-halfBody, 0, halfBody, 0);
+    shade.addColorStop(0, 'rgba(0,0,0,0.55)');
+    shade.addColorStop(0.42, 'rgba(0,0,0,0)');
+    shade.addColorStop(0.62, 'rgba(255,255,255,0.06)');
+    shade.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(-plateW / 2, plateY, plateW, plateH);
   }
 
   ctx.restore();
