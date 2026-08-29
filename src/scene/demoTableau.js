@@ -27,6 +27,14 @@ const DEG = Math.PI / 180;
 const DEMO_PERIOD = 3.6;
 
 /** Where the rocket, its fuse tip and the match sit, in local units. */
+/**
+ * Top of the drawn firework, in local units: the nose apex sits at the
+ * rocket's y plus the rocket's own topY. The caption is placed clear ABOVE
+ * this, which is the whole point — it was previously sitting at -18, right
+ * across the middle of the tube it was supposed to be labelling.
+ */
+const CAPTION_CLEARANCE = 16;
+
 const LAYOUT = {
   rocketX: -30,
   rocketY: 34,
@@ -103,9 +111,9 @@ function drawMatch(ctx, x, y, alpha, flick) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(x, y);
-  // Mirrored so the head points left, toward the fuse it is reaching for.
-  ctx.scale(-1, 1);
-  ctx.rotate(MATCH.angle);
+  // The stick trails up and away from the head, toward the hand that would be
+  // holding it, rather than down across the firework it is lighting.
+  ctx.rotate(-MATCH.angle);
 
   ctx.strokeStyle = PALETTE.stick;
   ctx.lineWidth = MATCH.thickness;
@@ -129,7 +137,7 @@ function drawMatch(ctx, x, y, alpha, flick) {
 
   ctx.save();
   ctx.translate(f.cx, f.cy);
-  ctx.rotate(-MATCH.angle + flick * 3 * DEG);
+  ctx.rotate(MATCH.angle + flick * 3 * DEG);
   ctx.scale(1, 1 + flick * 0.12);
   const g = ctx.createLinearGradient(0, -f.height / 2, 0, f.height / 2);
   g.addColorStop(0, PALETTE.goldHi);
@@ -238,6 +246,8 @@ export function drawDemoTableau(ctx, cx, cy, s, t, opts = {}) {
     ctx.direction = 'ltr';
     // Tracking by hand: this is a Latin caption, and the extra air is what
     // makes a short all-caps word read as a label rather than as shouting.
+    // Above the nose cone, never across it.
+    const captionY = LAYOUT.rocketY + ROCKET.topY - CAPTION_CLEARANCE;
     const text = opts.caption;
     const tracking = 4;
     let total = 0;
@@ -246,7 +256,7 @@ export function drawDemoTableau(ctx, cx, cy, s, t, opts = {}) {
     let pen = -total / 2;
     for (const ch of text) {
       const w = ctx.measureText(ch).width;
-      ctx.fillText(ch, pen + w / 2, -18);
+      ctx.fillText(ch, pen + w / 2, captionY);
       pen += w + tracking;
     }
   }

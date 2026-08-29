@@ -27,8 +27,20 @@ const TAU = Math.PI * 2;
 /** Drifting embers behind everything. */
 const EMBER_COUNT = 46;
 
-/** Slow shells arcing across the lower half. */
-const SHELL_COUNT = 5;
+/**
+ * Shells opening behind the text.
+ *
+ * Sized off the viewport, not off a fixed pixel radius: at 12-38px they read
+ * as specks on a phone and as dust on a monitor. A real shell fills a good
+ * part of the sky, so these are a fraction of the screen's smaller dimension
+ * and land somewhere between a third and two thirds of it across.
+ */
+const SHELL_COUNT = 7;
+const SHELL_MIN_SPAN = 0.3;
+const SHELL_MAX_SPAN = 0.62;
+
+/** Sparks per shell. A big shell needs a full ring or it looks like a dotted circle. */
+const SHELL_SPARKS = 26;
 
 function makeEl(tag, className, text, lang, dir) {
   const el = document.createElement(tag);
@@ -115,14 +127,18 @@ export function createLoader(host, options = {}) {
       });
     }
     shells = [];
+    const span = Math.min(width, height);
     for (let i = 0; i < SHELL_COUNT; i += 1) {
       shells.push({
-        x: width * (0.1 + rng.next() * 0.8),
-        y: height * (0.62 + rng.next() * 0.3),
-        r: 12 + rng.next() * 26,
+        x: width * (0.08 + rng.next() * 0.84),
+        // Spread over the whole screen rather than hugging the bottom: these
+        // are the backdrop the text sits against, not a footer.
+        y: height * (0.12 + rng.next() * 0.78),
+        r: span * (SHELL_MIN_SPAN + rng.next() * (SHELL_MAX_SPAN - SHELL_MIN_SPAN)) * 0.5,
         period: 5 + rng.next() * 5,
-        offset: rng.next() * 10,
-        colour: [PALETTE.goldHi, PALETTE.green, PALETTE.blue, PALETTE.whiteSpark][i % 4],
+        offset: rng.next() * 12,
+        tilt: rng.range(-0.4, 0.4),
+        colour: [PALETTE.goldHi, PALETTE.green, PALETTE.blue, PALETTE.whiteSpark, PALETTE.flame][i % 5],
       });
     }
   }
@@ -142,15 +158,31 @@ export function createLoader(host, options = {}) {
     // Distant shells, opening and fading low on the screen.
     for (const s of shells) {
       const u = ((t + s.offset) % s.period) / s.period;
-      if (u > 0.55) continue;
-      const k = u / 0.55;
-      const radius = s.r * (0.2 + k * 0.8);
-      ctx.globalAlpha = (1 - k) * 0.28;
+      if (u > 0.6) continue;
+      const k = u / 0.6;
+      // Eases out, so it opens fast and then hangs, the way a shell does.
+      const spread = 1 - (1 - k) * (1 - k);
+      const radius = s.r * (0.12 + spread * 0.88);
+      const fade = (1 - k) * 0.34;
       ctx.fillStyle = s.colour;
-      for (let i = 0; i < 12; i += 1) {
-        const a = (i / 12) * TAU;
+      ctx.strokeStyle = s.colour;
+      for (let i = 0; i < SHELL_SPARKS; i += 1) {
+        const a = (i / SHELL_SPARKS) * TAU + s.tilt;
+        const px = s.x + Math.cos(a) * radius;
+        const py = s.y + Math.sin(a) * radius * 0.82;
+
+        // A short trailing streak behind each spark, which is what stops a big
+        // ring reading as a circle of dots.
+        ctx.globalAlpha = fade * 0.45;
+        ctx.lineWidth = 1.3;
         ctx.beginPath();
-        ctx.arc(s.x + Math.cos(a) * radius, s.y + Math.sin(a) * radius * 0.8, 1.4, 0, TAU);
+        ctx.moveTo(s.x + Math.cos(a) * radius * 0.74, s.y + Math.sin(a) * radius * 0.82 * 0.74);
+        ctx.lineTo(px, py);
+        ctx.stroke();
+
+        ctx.globalAlpha = fade;
+        ctx.beginPath();
+        ctx.arc(px, py, 2.1, 0, TAU);
         ctx.fill();
       }
     }
