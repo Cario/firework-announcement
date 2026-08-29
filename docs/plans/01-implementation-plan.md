@@ -69,6 +69,7 @@ ctx.font / textAlign / textBaseline / fillText / measureText
 ctx.getImageData(x,y,w,h) -> ImageData { data: Uint8ClampedArray, width, height }
 ctx.setTransform(a,b,c,d,e,f)
 ctx.clip()                       // added in Phase 3 — see below
+ctx.strokeText(text, x, y)       // added for the EXAMPLE stamp — see below
 ```
 
 Added during Phase 3 under standing rule 1:
@@ -83,6 +84,18 @@ Added during Phase 3 under standing rule 1:
   'function'`, and a circular clip plus a full-canvas `fillRect` leaves the
   corner pixel at alpha 0 and the centre pixel at alpha 255. It is used only
   in `src/scene/clouds.js`, always inside a `save()`/`restore()` pair.
+
+Added later, under the same rule:
+
+- `ctx.strokeText()` — the EXAMPLE stamp on the loading screen outlines each
+  letter in the night colour before filling it in gold, so it holds against
+  both the dark box and the bright rocket underneath. Source: MDN
+  `CanvasRenderingContext2D.strokeText()`
+  (https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/strokeText),
+  baseline since the original Canvas 2D specification. Verified in the target
+  browser before use: not merely that the property is a function, but that a
+  stroked glyph actually paints — 712 non-transparent pixels from one
+  `strokeText('E')` on a blank 120x60 canvas. Used only in `src/ui/loader.js`.
 
 Notes that matter:
 - `getImageData` on a canvas that has only ever been drawn to by same-origin

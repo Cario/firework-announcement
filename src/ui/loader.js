@@ -42,6 +42,30 @@ const SHELL_MAX_SPAN = 0.62;
 /** Sparks per shell. A big shell needs a full ring or it looks like a dotted circle. */
 const SHELL_SPARKS = 26;
 
+/** Tilt of the EXAMPLE stamp across the demo box, radians. */
+const STAMP_ANGLE = 20 * (Math.PI / 180);
+
+/**
+ * A rounded-rectangle path.
+ *
+ * Built from lineTo and quadraticCurveTo rather than ctx.roundRect, whose
+ * support is still uneven, and which is not on this project's API list.
+ */
+function roundedRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
 function makeEl(tag, className, text, lang, dir) {
   const el = document.createElement(tag);
   el.className = className;
@@ -205,14 +229,78 @@ export function createLoader(host, options = {}) {
     // the slot's own box is what keeps it centred on a tall phone and a wide
     // monitor alike — there is no viewport maths here to get wrong.
     const slot = demoSlot.getBoundingClientRect();
-    const host = el.getBoundingClientRect();
-    const cx = slot.left - host.left + slot.width / 2;
-    const cy = slot.top - host.top + slot.height / 2;
-    const s = Math.max(0.75, Math.min(1.9, slot.width / 210));
-    drawDemoTableau(ctx, cx, cy, s, t, {
-      caption: 'EXAMPLE',
-      captionFont: `500 ${Math.round(13 / s)}px Jost, system-ui, sans-serif`,
-    });
+    const hostBox = el.getBoundingClientRect();
+    const bx = slot.left - hostBox.left;
+    const by = slot.top - hostBox.top;
+    const cx = bx + slot.width / 2;
+    const cy = by + slot.height / 2;
+    // Fit the box on BOTH axes. Sizing off the width alone was enough on a
+    // tall phone and wrong everywhere else: on a short or landscape viewport
+    // the box loses height while keeping its width, and the firework was
+    // drawn at full size into a box too shallow to hold it, so the clip cut
+    // the nose off. 115 is the tableau's own vertical extent in local units.
+    const s = Math.max(0.55, Math.min(1.9, slot.width / 175, slot.height / 115));
+
+    // --- the frame -------------------------------------------------------
+    // A box around the demonstration, so it reads as a diagram OF the thing
+    // rather than as part of the page. Darker inside than the screen behind
+    // it, with a gold hairline — the same vocabulary the rest of the site
+    // uses for something you are meant to look at.
+    ctx.save();
+    roundedRectPath(ctx, bx, by, slot.width, slot.height, 14);
+    ctx.fillStyle = 'rgba(6, 11, 28, 0.62)';
+    ctx.fill();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Everything below is clipped to the box, so the match cannot swing out
+    // of the frame on its way in.
+    ctx.clip();
+    drawDemoTableau(ctx, cx, cy, s, t, {});
+
+    // --- the stamp -------------------------------------------------------
+    // Rotated across the whole box: translucent enough to read the diagram
+    // through, heavy enough to be the first thing seen. This replaces the
+    // caption that used to sit above the rocket — one EXAMPLE, not two.
+    ctx.translate(cx, cy);
+    ctx.rotate(-STAMP_ANGLE);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.direction = 'ltr';
+    const stampSize = Math.min(slot.width, slot.height) * 0.34;
+    ctx.font = `600 ${stampSize}px Jost, system-ui, sans-serif`;
+
+    // Tracked out by hand: a stamp reads as a stamp because of the air
+    // between its letters, and canvas letter-spacing is not available here.
+    const stamp = 'EXAMPLE';
+    const tracking = stampSize * 0.18;
+    let total = 0;
+    for (const ch of stamp) total += ctx.measureText(ch).width + tracking;
+    total -= tracking;
+    const fit = Math.min(1, (Math.hypot(slot.width, slot.height) * 0.8) / total);
+    let pen = (-total * fit) / 2;
+    for (const ch of stamp) {
+      const w = ctx.measureText(ch).width * fit;
+      ctx.save();
+      ctx.translate(pen + w / 2, 0);
+      ctx.scale(fit, fit);
+      // A dark outline first, so the gold holds against the bright rocket
+      // as well as against the dark box.
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = stampSize * 0.1;
+      ctx.strokeStyle = PALETTE.night0;
+      ctx.strokeText(ch, 0, 0);
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = PALETTE.goldHi;
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+      pen += w + tracking * fit;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
 
     raf = requestAnimationFrame(frame);
   }
