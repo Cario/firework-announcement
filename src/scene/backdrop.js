@@ -74,7 +74,12 @@ export function createBackdrop(metrics, options = {}) {
       const depth = (y - bandTop) / Math.max(1, bandBottom - bandTop);
       const scale = (0.28 + depth * 0.34) * m.scale;
 
-      const isMortar = i % Math.ceil(total / mortarCount) === 0 && items.length > 0;
+      // Guarded so a field with no mortars in it is a legal field: dividing
+      // by a zero count would otherwise decide every item was one.
+      const isMortar =
+        mortarCount > 0 &&
+        i % Math.ceil(total / mortarCount) === 0 &&
+        items.length > 0;
 
       items.push({
         x,
@@ -134,7 +139,9 @@ export function createBackdrop(metrics, options = {}) {
     ctx.fillRect(-half, -h + h * 0.66, w, 1.6);
     ctx.globalAlpha = it.alpha;
 
-    // Cone.
+    // Cone, with a shadowed right facet — the same treatment the two big
+    // fireworks get, so the field reads as the same kind of object further
+    // away rather than as flatter cousins of it.
     ctx.fillStyle = it.colour.hi;
     ctx.beginPath();
     ctx.moveTo(0, -h - w * 0.85);
@@ -142,6 +149,22 @@ export function createBackdrop(metrics, options = {}) {
     ctx.lineTo(-half, -h + 0.5);
     ctx.closePath();
     ctx.fill();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath();
+    ctx.moveTo(0, -h - w * 0.85);
+    ctx.lineTo(half, -h + 0.5);
+    ctx.lineTo(half * 0.3, -h + 0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    // A glint along the shoulder and shadow at the foot of the tube.
+    const vertical = ctx.createLinearGradient(0, -h, 0, 0);
+    vertical.addColorStop(0, 'rgba(255,255,255,0.09)');
+    vertical.addColorStop(0.35, 'rgba(255,255,255,0)');
+    vertical.addColorStop(1, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = vertical;
+    ctx.fillRect(-half, -h, w, h);
 
     ctx.restore();
   }

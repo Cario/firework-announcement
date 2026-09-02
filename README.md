@@ -1,8 +1,9 @@
 # Nikkah announcement
 
-A single-page invitation. You open the link, light a firework, and it climbs
-into the night sky and bursts into the announcement, one line at a time, before
-settling into a card you can read and share.
+A single-page invitation. You open the link and pick one of two fireworks —
+English or Urdu. It is carried to the launch platform, lit, and climbs into the
+night sky, bursting into the announcement one line at a time before settling
+into a card you can read and share.
 
 Built for phones first, and for viewers who are not comfortable with
 technology: there is one thing to do on the screen, it is signposted three ways

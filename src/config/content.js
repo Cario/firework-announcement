@@ -78,12 +78,14 @@ export const CONTENT_UR = {
   label: 'اردو',
   htmlLang: 'ur',
 
-  surprise: 'سرپرائز',
+  /* A transliteration of the English word is not the Urdu for this moment;
+     نویدِ مسرت — glad tidings of joy — is. */
+  surprise: 'نویدِ مسرت',
 
   lines: [
     'آپ کو نہایت شادمانی کے ساتھ تقریبِ نکاح میں شرکت کی دعوت دی جاتی ہے',
     'محمد اسجد، فرزند احمد شمائل و منزہ آصف',
-    'بہمراہ نِہٰا کاشف، دخترِ کاشف علی و عائشہ کاشف',
+    'بہمراہ نیہا کاشف، دخترِ کاشف علی و عائشہ کاشف',
   ],
 
   dateLine: 'یکم جنوری، ۲۰۲۷ء',
@@ -99,7 +101,7 @@ export const CONTENT_UR = {
     groom: 'محمد اسجد',
     groomParents: 'فرزند احمد شمائل و منزہ آصف',
     joiner: 'بہمراہ',
-    bride: 'نِہٰا کاشف',
+    bride: 'نیہا کاشف',
     brideParents: 'دخترِ کاشف علی و عائشہ کاشف',
     dateLabel: 'بتاریخ',
     date: 'یکم جنوری، ۲۰۲۷ء',

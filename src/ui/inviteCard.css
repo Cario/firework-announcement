@@ -118,6 +118,21 @@
   border: 1px solid var(--card-rule); /* hairline */
   border-radius: 12px;
   background-color: var(--card-bg);
+  /* Paper, not a swatch: a faint warm light falling from the top edge, an
+     inner gold rule inside the hairline, and a drop shadow so the card lifts
+     off the night behind it instead of being pasted onto it. Every stop is a
+     shade of the same parchment, so the text contrast is untouched. */
+  background-image: radial-gradient(
+    112% 84% at 50% 8%,
+    #fffdf6 0%,
+    #fbf6e9 46%,
+    #f2ead6 100%
+  );
+  box-shadow:
+    0 24px 60px -18px rgba(2, 5, 14, 0.8),
+    inset 0 2px 0 0 rgba(255, 255, 255, 0.7),
+    inset 0 0 0 1px rgba(216, 199, 147, 0.25),
+    inset 0 0 46px -14px rgba(240, 194, 94, 0.2);
   color: var(--card-ink);
 
   text-align: center;

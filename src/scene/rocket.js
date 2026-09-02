@@ -122,11 +122,17 @@ function getBodyGradient(ctx, livery) {
  * @param {number} y  world/screen y of the body-base centre
  * @param {number} [scale=1]
  * @param {number} [angle=0] radians, clockwise, about (x, y)
- * @param {{ stickLength?: number, livery?: object }} [options]
+ * @param {{ stickLength?: number, livery?: object, alpha?: number }} [options]
  */
 export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   const stickLength = options.stickLength ?? ROCKET.stickLength;
   const livery = options.livery || LIVERY.red;
+  // Every alpha inside is multiplied by this, so a caller can fade the whole
+  // assembly out as one object. Setting `globalAlpha` around the call cannot
+  // do that: the body, bands and label each assign their own alpha and would
+  // simply overwrite it.
+  const fade = options.alpha === undefined ? 1 : options.alpha;
+  if (fade <= 0.004) return;
 
   const halfBody = ROCKET.bodyWidth / 2;
   const bodyTop = -ROCKET.bodyHeight;
@@ -144,22 +150,39 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   // meadow rather than on top of it.
   if (options.grounded) {
     const footY = stickLength;
-    ctx.globalAlpha = 0.32;
+    ctx.globalAlpha = 0.4 * fade;
+    ctx.fillStyle = PALETTE.soilShadow;
+    ctx.beginPath();
+    ctx.ellipse(0, footY, ROCKET.bodyWidth * 0.66, ROCKET.bodyWidth * 0.19, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.5 * fade;
     ctx.fillStyle = PALETTE.grass;
     ctx.beginPath();
-    ctx.ellipse(0, footY, ROCKET.bodyWidth * 0.62, ROCKET.bodyWidth * 0.17, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, footY - 0.5, ROCKET.bodyWidth * 0.46, ROCKET.bodyWidth * 0.13, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.8 * fade;
     ctx.fillStyle = PALETTE.grassHi;
     ctx.beginPath();
-    ctx.ellipse(0, footY - 1, ROCKET.bodyWidth * 0.4, ROCKET.bodyWidth * 0.12, 0, Math.PI, 0);
+    ctx.ellipse(0, footY - 1.4, ROCKET.bodyWidth * 0.34, ROCKET.bodyWidth * 0.1, 0, Math.PI, 0);
     ctx.fill();
-    ctx.globalAlpha = 1;
   }
+
+  ctx.globalAlpha = fade;
 
   // --- Stick ------------------------------------------------------------
   // Starts half a pixel above the base so it can never separate from it.
-  ctx.fillStyle = PALETTE.stick;
+  // Shaded across its width: at 2.5 units a flat bar reads as a printed
+  // line, and the same three-stop treatment the tube gets makes it a dowel.
+  const stickShade = ctx.createLinearGradient(
+    -ROCKET.stickWidth / 2,
+    0,
+    ROCKET.stickWidth / 2,
+    0
+  );
+  stickShade.addColorStop(0, PALETTE.stickHi);
+  stickShade.addColorStop(0.45, PALETTE.stick);
+  stickShade.addColorStop(1, PALETTE.stickLo);
+  ctx.fillStyle = stickShade;
   ctx.fillRect(
     -ROCKET.stickWidth / 2,
     -0.5,
@@ -169,7 +192,13 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
 
   // --- Fins -------------------------------------------------------------
   // Drawn before the body so their inset roots disappear underneath it.
-  ctx.fillStyle = livery.lo;
+  // Graded down into near-black at the ground edge, which is what sets them
+  // behind the tube instead of beside it.
+  const finShade = ctx.createLinearGradient(0, -ROCKET.finHeight, 0, 0);
+  finShade.addColorStop(0, livery.mid);
+  finShade.addColorStop(0.55, livery.lo);
+  finShade.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = finShade;
   ctx.beginPath();
   ctx.moveTo(-finRootX, -ROCKET.finHeight);
   ctx.lineTo(-finRootX, 0);
@@ -188,28 +217,59 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
   ctx.fillStyle = getBodyGradient(ctx, livery);
   ctx.fillRect(-halfBody, bodyTop, ROCKET.bodyWidth, ROCKET.bodyHeight);
 
+  // A vertical pass over the horizontal cylinder shading: a glint along the
+  // shoulder and the tube falling into shadow where it meets the fins. Two
+  // axes of shading is the difference between a coloured rectangle and a
+  // lit object.
+  const bodyShade = ctx.createLinearGradient(0, bodyTop, 0, bodyTop + ROCKET.bodyHeight);
+  bodyShade.addColorStop(0, 'rgba(255,255,255,0.10)');
+  bodyShade.addColorStop(0.3, 'rgba(255,255,255,0)');
+  bodyShade.addColorStop(0.78, 'rgba(0,0,0,0)');
+  bodyShade.addColorStop(1, 'rgba(0,0,0,0.34)');
+  ctx.fillStyle = bodyShade;
+  ctx.fillRect(-halfBody, bodyTop, ROCKET.bodyWidth, ROCKET.bodyHeight);
+
   // --- Gold bands -------------------------------------------------------
-  ctx.fillStyle = PALETTE.gold;
-  ctx.globalAlpha = ROCKET.bandAlpha;
+  // Each band takes the tube's own curvature back over it, so the gold turns
+  // with the cylinder instead of lying flat across it.
+  ctx.globalAlpha = ROCKET.bandAlpha * fade;
   for (let i = 0; i < ROCKET.bandOffsets.length; i++) {
-    ctx.fillRect(
-      -halfBody,
-      bodyTop + ROCKET.bandOffsets[i],
-      ROCKET.bodyWidth,
-      ROCKET.bandHeight
-    );
+    const bandY = bodyTop + ROCKET.bandOffsets[i];
+    ctx.fillStyle = PALETTE.gold;
+    ctx.fillRect(-halfBody, bandY, ROCKET.bodyWidth, ROCKET.bandHeight);
+    const bandShade = ctx.createLinearGradient(-halfBody, 0, halfBody, 0);
+    bandShade.addColorStop(0, 'rgba(0,0,0,0.45)');
+    bandShade.addColorStop(0.4, 'rgba(255,255,255,0.22)');
+    bandShade.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = bandShade;
+    ctx.fillRect(-halfBody, bandY, ROCKET.bodyWidth, ROCKET.bandHeight);
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = fade;
 
   // --- Nose cone --------------------------------------------------------
   // Base half a pixel inside the body top: flush, with no seam at any dpr.
+  // Shaded across, like the tube, then a hard shadow down the right facet so
+  // the cone reads as a cone and not as a flat triangle sat on a cylinder.
   const noseBaseY = bodyTop + 0.5;
   const halfNose = ROCKET.noseWidth / 2;
-  ctx.fillStyle = livery.nose;
+  const noseShade = ctx.createLinearGradient(-halfNose, 0, halfNose, 0);
+  noseShade.addColorStop(0, livery.lo);
+  noseShade.addColorStop(0.4, livery.nose);
+  noseShade.addColorStop(0.58, livery.hi);
+  noseShade.addColorStop(1, livery.lo);
+  ctx.fillStyle = noseShade;
   ctx.beginPath();
   ctx.moveTo(0, bodyTop - ROCKET.noseHeight);
   ctx.lineTo(halfNose, noseBaseY);
   ctx.lineTo(-halfNose, noseBaseY);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  ctx.moveTo(0, bodyTop - ROCKET.noseHeight);
+  ctx.lineTo(halfNose, noseBaseY);
+  ctx.lineTo(halfNose * 0.34, noseBaseY);
   ctx.closePath();
   ctx.fill();
 
@@ -231,9 +291,9 @@ export function drawRocket(ctx, x, y, scale = 1, angle = 0, options = {}) {
     ctx.fillRect(-plateW / 2, plateY, plateW, plateH);
     ctx.strokeStyle = PALETTE.gold;
     ctx.lineWidth = 0.8;
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = 0.55 * fade;
     ctx.strokeRect(-plateW / 2, plateY, plateW, plateH);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = fade;
 
     ctx.fillStyle = options.labelColor || PALETTE.goldHi;
     ctx.font = options.labelFont

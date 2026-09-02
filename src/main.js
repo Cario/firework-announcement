@@ -93,7 +93,11 @@ if (!canvasEl) {
       setpiece = createSetpiece(metrics);
       // One waiting firework per word the longest announcement will spell out,
       // so every shell that goes up has somewhere on the ground it came from.
-      backdrop = createBackdrop(metrics, { rocketCount: 32, mortarCount: 6 });
+      //
+      // No mortars. The squat tubes read as litter scattered through the
+      // grass rather than as equipment, and the one piece of launch hardware
+      // in the scene should be the platform the chosen firework is carried to.
+      backdrop = createBackdrop(metrics, { rocketCount: 34, mortarCount: 0 });
     } else {
       sky.resize(metrics);
       ground.resize(metrics);
@@ -288,6 +292,11 @@ if (!canvasEl) {
     const lang = setpiece.hitTest(screenToWorldX(screenX));
     setpiece.choose(lang);
     buildForLanguage(lang);
+    // The prompt has done its job the moment a firework is picked. The
+    // director used to hide it on `start`, which now happens a beat later,
+    // and leaving the question up while the answer is being carried to the
+    // pad reads as though the tap did not register.
+    if (prompt) prompt.hide();
     // Audio has to be created inside the gesture, and must never be able to
     // hold up the visuals: `initAudio` always resolves, and the sequence
     // starts regardless of what it resolves to.
@@ -300,7 +309,13 @@ if (!canvasEl) {
     // gesture is expected on mobile, and `primeAudio` keeps trying on the
     // gesture types the browser does honour.
     primeAudio();
-    director.start();
+
+    // Set the firework up before lighting it. The chosen one is carried to
+    // the platform and the other cleared away; only once it is standing where
+    // it will be fired from does the sequence — and therefore the match —
+    // begin. Nothing is timed off this: the set-piece calls back when the
+    // move is done, so the schedule always starts from the same frame.
+    setpiece.beginStaging(() => director.start());
   }
 
   const target = stageEl || document;
@@ -390,6 +405,9 @@ if (!canvasEl) {
    */
   const HORIZON_TARGET = 0.3;
 
+  /** Extra crop, on top of the opening one, once the firework is on the pad. */
+  const STAGING_PUSH = 0.15;
+
   function openZoom() {
     const pieceWidth = SETPIECE_WIDTH * metrics.setpieceScale;
     const pieceHeight = SETPIECE_HEIGHT * metrics.setpieceScale;
@@ -421,6 +439,15 @@ if (!canvasEl) {
       const r = director.rocket;
       return { x: r.x, y: r.y };
     }
+    // While the firework is being set up, the crop expands around the
+    // platform instead of the bottom edge, so the pad holds still under the
+    // push-in rather than sliding out from under it. The pad is at the centre
+    // of the box, which is the centre of the viewport, so only y moves.
+    const staging = setpiece.stagingProgress;
+    if (staging > 0.001) {
+      const padY = setpiece.padWorld.y - camera.y;
+      return { x: view.width / 2, y: view.height + (padY - view.height) * staging * 0.85 };
+    }
     return { x: view.width / 2, y: view.height };
   }
 
@@ -446,7 +473,13 @@ if (!canvasEl) {
 
     // Framing. Everything below is drawn inside this transform — scene and
     // particles alike — so the crop can never put the two out of register.
-    const zoom = 1 + (openZoom() - 1) * (1 - easeInOutCubic(director.openness));
+    // The opening crop, plus a small extra push toward the platform while the
+    // firework is being carried to it — the camera leans in for the strike and
+    // then rides the pull-back out as the rocket climbs.
+    const opened = easeInOutCubic(director.openness);
+    const zoom =
+      (1 + (openZoom() - 1) * (1 - opened)) *
+      (1 + STAGING_PUSH * setpiece.stagingProgress * (1 - opened));
     const zoomed = zoom > 1.001;
     const focal = focalPoint();
 

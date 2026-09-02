@@ -19,9 +19,19 @@ import { drawRocket, ROCKET, LIVERY } from './rocket.js';
 
 const TAU = Math.PI * 2;
 
-/** Horizontal correction so the drawn ink is centred on the given point. */
-const CENTRE_NUDGE = 7;
 const DEG = Math.PI / 180;
+
+/**
+ * The tableau's own bounding box in local units, measured off the drawing
+ * below: the rocket's fins and nose on one side, the match's far end and the
+ * ring on the other, with a unit or two of air.
+ *
+ * The caller scales to fit this box on both axes and the draw centres itself
+ * inside it, so the diagram fills whatever frame it is given at whatever
+ * aspect ratio, instead of being sized against two hand-tuned numbers that
+ * were only ever right for one shape of box.
+ */
+export const TABLEAU_BOUNDS = { x0: -62, y0: -53, x1: 92, y1: 68 };
 
 /** One loop of the match coming in, holding, and withdrawing. */
 const DEMO_PERIOD = 3.6;
@@ -170,13 +180,15 @@ export function drawDemoTableau(ctx, cx, cy, s, t, opts = {}) {
   const step = sample(u);
 
   ctx.save();
-  // The group is nudged right by its own ink offset: the rocket sits left of
-  // the origin and the ring right of it, and measuring the drawn result showed
-  // the pair landing a few units off centre. Correcting it here means the
-  // caller can hand over a plain centre point and trust it.
+  // Centre the BOX on the point handed over, not the origin: the rocket sits
+  // left of the origin and the match reaches out well to the right of it, so
+  // an uncorrected group lands noticeably off-centre in its frame.
   ctx.translate(cx, cy);
   ctx.scale(s, s);
-  ctx.translate(CENTRE_NUDGE, 0);
+  ctx.translate(
+    -(TABLEAU_BOUNDS.x0 + TABLEAU_BOUNDS.x1) / 2,
+    -(TABLEAU_BOUNDS.y0 + TABLEAU_BOUNDS.y1) / 2
+  );
 
   // --- the ghost rocket ---------------------------------------------------
   ctx.globalAlpha = 0.5;

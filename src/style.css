@@ -568,38 +568,32 @@ body {
   text-align: center;
 }
 
-.loader-heading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  color: var(--gold-hi);
-  text-shadow:
-    0 0 20px rgba(240, 194, 94, 0.45),
-    0 2px 8px rgba(3, 8, 20, 0.95);
-}
-
-.loader-line {
+/* One quiet word above the box. Small and tracked out, so it labels the
+   diagram without competing with it — the stamp it replaced was the loudest
+   thing on the screen. The negative right margin takes back the trailing
+   letter-space, which would otherwise push the word off centre. */
+.loader-demo-label {
   font-family: 'Jost', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-weight: 500;
-  font-size: clamp(22px, 5.4vw, 34px);
-  line-height: 1.25;
-}
-
-.loader-line--urdu {
-  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', serif;
-  font-size: clamp(20px, 4.8vw, 30px);
-  /* Nastaliq's cascade needs the room; at tighter leading its tails collide
-     with the line above. */
-  line-height: 2.3;
-  margin-top: 0.35em;
+  font-size: clamp(10px, 2.4vw, 12px);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--gold);
+  opacity: 0.62;
+  margin-bottom: -4px;
+  margin-right: -0.3em;
 }
 
 /* The box the demonstration is drawn into. Sized here, read back by the
    canvas, so the tableau is centred by the layout rather than by arithmetic
-   that has to be re-derived for every aspect ratio. */
+   that has to be re-derived for every aspect ratio.
+
+   The aspect ratio is the tableau's own, so the diagram fills the frame on
+   both axes at every viewport instead of being letterboxed on one of them. */
 .loader-demo {
-  width: min(78vw, 340px);
-  height: min(34vh, 210px);
+  width: min(74vw, 306px);
+  aspect-ratio: 154 / 121;
+  max-height: 40vh;
 }
 
 .loader-cta {

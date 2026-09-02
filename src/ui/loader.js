@@ -9,8 +9,13 @@
  *
  * The demonstration used to live in the meadow itself, beside the two real
  * fireworks, where it read as an instruction to pick the one it stood next
- * to. Alone on its own screen and labelled EXAMPLE, it can only be read as
+ * to. Alone on its own screen and labelled Example, it can only be read as
  * what it is.
+ *
+ * The screen carries as little text as it can. The language question used to
+ * be asked here as well as in the meadow, which meant the viewer was asked to
+ * choose before they had been shown anything to choose between; it belongs in
+ * the scene, next to the two fireworks, and nowhere else.
  *
  * Decor is canvas: a slow drift of embers and a low arc of distant shells, so
  * the screen belongs to the same night as the scene behind it rather than
@@ -18,8 +23,7 @@
  */
 
 import { PALETTE } from '../config/palette.js';
-import { CONTENT_EN, CONTENT_UR } from '../config/content.js';
-import { drawDemoTableau } from '../scene/demoTableau.js';
+import { drawDemoTableau, TABLEAU_BOUNDS } from '../scene/demoTableau.js';
 import { createRng, SEEDS } from '../engine/rng.js';
 
 const TAU = Math.PI * 2;
@@ -42,8 +46,11 @@ const SHELL_MAX_SPAN = 0.62;
 /** Sparks per shell. A big shell needs a full ring or it looks like a dotted circle. */
 const SHELL_SPARKS = 26;
 
-/** Tilt of the EXAMPLE stamp across the demo box, radians. */
-const STAMP_ANGLE = 20 * (Math.PI / 180);
+/**
+ * How much of the demo box the tableau fills, on its tighter axis. The rest
+ * is air between the diagram and its frame.
+ */
+const TABLEAU_FILL = 0.9;
 
 /**
  * A rounded-rectangle path.
@@ -95,14 +102,12 @@ export function createLoader(host, options = {}) {
 
   const panel = makeEl('div', 'loader-panel');
 
-  const heading = makeEl('div', 'loader-heading');
-  heading.appendChild(makeEl('span', 'loader-line', CONTENT_EN.chooser, 'en', 'ltr'));
-  heading.appendChild(
-    makeEl('span', 'loader-line loader-line--urdu', CONTENT_UR.chooser, 'ur', 'rtl')
-  );
-  panel.appendChild(heading);
+  // A small label above the box, in place of the stamp that used to be
+  // rotated across the diagram itself. The word only has to be present; at
+  // stamp size it was competing with the thing it was labelling.
+  panel.appendChild(makeEl('span', 'loader-demo-label', 'Example', 'en', 'ltr'));
 
-  // The tableau's canvas is the element the demo is drawn into; the heading
+  // The tableau's canvas is the element the demo is drawn into; the label
   // sits above it and the call to action below, so the whole group is one
   // centred column at any aspect ratio.
   const demoSlot = makeEl('div', 'loader-demo');
@@ -234,12 +239,18 @@ export function createLoader(host, options = {}) {
     const by = slot.top - hostBox.top;
     const cx = bx + slot.width / 2;
     const cy = by + slot.height / 2;
-    // Fit the box on BOTH axes. Sizing off the width alone was enough on a
-    // tall phone and wrong everywhere else: on a short or landscape viewport
-    // the box loses height while keeping its width, and the firework was
-    // drawn at full size into a box too shallow to hold it, so the clip cut
-    // the nose off. 115 is the tableau's own vertical extent in local units.
-    const s = Math.max(0.55, Math.min(1.9, slot.width / 175, slot.height / 115));
+    // Fit the tableau's own bounding box on BOTH axes. Sizing against two
+    // hand-tuned numbers was wrong at every aspect ratio but the one they
+    // were picked for: the nose was clipped on a short viewport and the
+    // match swung out of frame on a wide one. The box is measured off the
+    // drawing, so this fits whatever shape the slot turns out to be.
+    const s = Math.max(
+      0.4,
+      Math.min(
+        (slot.width * TABLEAU_FILL) / (TABLEAU_BOUNDS.x1 - TABLEAU_BOUNDS.x0),
+        (slot.height * TABLEAU_FILL) / (TABLEAU_BOUNDS.y1 - TABLEAU_BOUNDS.y0)
+      )
+    );
 
     // --- the frame -------------------------------------------------------
     // A box around the demonstration, so it reads as a diagram OF the thing
@@ -261,44 +272,6 @@ export function createLoader(host, options = {}) {
     ctx.clip();
     drawDemoTableau(ctx, cx, cy, s, t, {});
 
-    // --- the stamp -------------------------------------------------------
-    // Rotated across the whole box: translucent enough to read the diagram
-    // through, heavy enough to be the first thing seen. This replaces the
-    // caption that used to sit above the rocket — one EXAMPLE, not two.
-    ctx.translate(cx, cy);
-    ctx.rotate(-STAMP_ANGLE);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.direction = 'ltr';
-    const stampSize = Math.min(slot.width, slot.height) * 0.34;
-    ctx.font = `600 ${stampSize}px Jost, system-ui, sans-serif`;
-
-    // Tracked out by hand: a stamp reads as a stamp because of the air
-    // between its letters, and canvas letter-spacing is not available here.
-    const stamp = 'EXAMPLE';
-    const tracking = stampSize * 0.18;
-    let total = 0;
-    for (const ch of stamp) total += ctx.measureText(ch).width + tracking;
-    total -= tracking;
-    const fit = Math.min(1, (Math.hypot(slot.width, slot.height) * 0.8) / total);
-    let pen = (-total * fit) / 2;
-    for (const ch of stamp) {
-      const w = ctx.measureText(ch).width * fit;
-      ctx.save();
-      ctx.translate(pen + w / 2, 0);
-      ctx.scale(fit, fit);
-      // A dark outline first, so the gold holds against the bright rocket
-      // as well as against the dark box.
-      ctx.globalAlpha = 0.3;
-      ctx.lineWidth = stampSize * 0.1;
-      ctx.strokeStyle = PALETTE.night0;
-      ctx.strokeText(ch, 0, 0);
-      ctx.globalAlpha = 0.6;
-      ctx.fillStyle = PALETTE.goldHi;
-      ctx.fillText(ch, 0, 0);
-      ctx.restore();
-      pen += w + tracking * fit;
-    }
     ctx.globalAlpha = 1;
     ctx.restore();
 

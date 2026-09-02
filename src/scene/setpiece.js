@@ -62,18 +62,52 @@ export const STATION_DEFS = Object.freeze([
 /** Bottom of the box, as a fraction of the view height above the frame edge. */
 const BOTTOM_RATIO = 0.08;
 
-/** Fuse: cubic from the rocket base, dipping down and right to the tip. */
+/**
+ * Fuse: cubic from the rocket's STICK, dipping down and right to the tip.
+ *
+ * The start used to sit at y158 — three units below the foot of an 18-unit
+ * stick that ends at y155 — so the cord began in the grass a little way under
+ * the firework and read as a separate object lying near it. It now starts on
+ * the stick itself, well above the foot, and `drawTie` lashes it there.
+ */
 const FUSE = {
   x0: 19,
-  y0: 158,
-  c1x: 32,
-  c1y: 167,
-  c2x: 48,
-  c2y: 166,
+  y0: 147.5,
+  c1x: 25,
+  c1y: 163,
+  c2x: 45,
+  c2y: 164.5,
   x1: 62,
   y1: 152,
   width: 2.2,
 };
+
+/**
+ * The launch platform, in box coordinates.
+ *
+ * A firework standing in the grass is a firework someone left there; one
+ * carried to a platform is a firework about to be fired. It sits centre-front
+ * of the box — the two stations flank it — with its top surface a little
+ * above the line the rockets are staked on, so the chosen one visibly steps
+ * UP onto it.
+ */
+const PAD = {
+  x: SETPIECE_WIDTH / 2,
+  ground: 175,
+  top: 161,
+  halfTop: 30,
+  halfBase: 39,
+  rail: 6.5,
+};
+
+/** How long the chosen firework takes to reach the pad, in seconds. */
+const STAGE_SECONDS = 1.25;
+
+/** How far the unchosen firework slides aside, in local units. */
+const STAGE_EXIT = 72;
+
+/** The binding that lashes the fuse to the stick: three turns of cord. */
+const TIE_TURNS = 3;
 
 /** Sample count for the fuse path. Plan 5.2: ~60 points. */
 const FUSE_SAMPLES = 60;
@@ -213,6 +247,9 @@ function bezier(p0, p1, p2, p3, t) {
  *   stopIdleDemo: () => void,
  *   startFuseBurn: (seconds?: number) => void,
  *   setRocketVisible: (visible: boolean) => void,
+ *   beginStaging: (done?: () => void) => void,
+ *   stagingProgress: number,
+ *   padWorld: { x: number, y: number, ground: number },
  *   localToWorld: (lx: number, ly: number) => { x: number, y: number },
  *   state: string,
  *   scale: number,
@@ -260,6 +297,13 @@ export function createSetpiece(metrics, options = {}) {
     burnDone: false,
     demoRunning: true,
     rocketVisible: true,
+    // Staging offsets, in WORLD px, added to everything this station draws.
+    // Zero until a firework is chosen and the two of them move.
+    wx: 0,
+    wy: 0,
+    alpha: 1,
+    // The mound of earth it was staked in, which fades as it leaves.
+    standAlpha: 1,
   }));
 
   const byId = (id) => stations.find((st) => st.id === id) || stations[0];
@@ -268,6 +312,11 @@ export function createSetpiece(metrics, options = {}) {
   let flashSparks = [];
   const demoOut = { a: 0, dx: 0, dy: 0 };
   const flashOut = { a: 0 };
+
+  /** Staging: 0 both fireworks at their stakes, 1 the chosen one on the pad. */
+  let stageT = 0;
+  let staging = false;
+  let onStaged = null;
 
   function layout() {
     scale = m.setpieceScale;
@@ -298,6 +347,52 @@ export function createSetpiece(metrics, options = {}) {
 
   function toWorldY(ly) {
     return originY + ly * scale;
+  }
+
+  /** World x of the pad's centre, which is also the centre of the box. */
+  function padWorldX() {
+    return originX + PAD.x * scale;
+  }
+
+  /** World y of the pad's top surface — where a stick tip comes to rest. */
+  function padWorldTopY() {
+    return originY + PAD.top * scale;
+  }
+
+  /** World x of a station's rocket at its stake, before any staging offset. */
+  function stationRocketX(st) {
+    return toWorldX(ROCKET_LOCAL.x, st);
+  }
+
+  /**
+   * Recompute both stations' staging offsets from `stageT`.
+   *
+   * The chosen firework travels to the pad on an eased arc, lifting a little
+   * off the ground on the way — carried, not dragged. The other slides out of
+   * frame and fades; it stays a real object leaving rather than one that
+   * blinks out.
+   */
+  function applyStaging() {
+    const k = easeInOutCubic(clamp01(stageT));
+    for (const st of stations) {
+      if (chosenId !== null && st.id === chosenId) {
+        const dx = padWorldX() - stationRocketX(st);
+        const dy = (PAD.top - ROCKET_LOCAL.stick - ROCKET_LOCAL.y) * scale;
+        const hop = Math.sin(Math.PI * clamp01(stageT)) * 13 * scale;
+        st.wx = dx * k;
+        st.wy = dy * k - hop;
+        st.alpha = 1;
+        // The earth it was staked in belongs to the stake, not to the rocket,
+        // so it goes as soon as the rocket does.
+        st.standAlpha = 1 - clamp01(stageT * 2.6);
+      } else {
+        const away = (st.offset > 0 ? 1 : -1) * STAGE_EXIT * scale;
+        st.wx = away * k;
+        st.wy = 0;
+        st.alpha = 1 - clamp01((stageT - 0.15) * 1.5);
+        st.standAlpha = st.alpha;
+      }
+    }
   }
 
   function buildFuse(st) {
@@ -341,6 +436,10 @@ export function createSetpiece(metrics, options = {}) {
     layout();
     for (const st of stations) buildFuse(st);
     buildFlash();
+    // Offsets are in world px, so a resize has to restate them at the new
+    // scale — otherwise a rotation mid-sequence leaves the rocket beside the
+    // pad rather than on it.
+    applyStaging();
     flameGradient = null;
   }
 
@@ -363,10 +462,12 @@ export function createSetpiece(metrics, options = {}) {
    * space. The pivot is the left end of the stick, which is also where the
    * head and its flame live.
    */
-  function drawMatch(ctx, ctxAlpha, boxX, boxY, flick, mirror) {
+  function drawMatch(ctx, ctxAlpha, boxX, boxY, flick, mirror, wx = 0, wy = 0) {
     ctx.save();
     ctx.globalAlpha = ctxAlpha;
-    ctx.translate(boxToWorldX(boxX), toWorldY(boxY));
+    // The staging offsets come along: the fuse the match is aiming at has
+    // moved to the pad, and a match that stayed put would light bare grass.
+    ctx.translate(boxToWorldX(boxX) + wx, toWorldY(boxY) + wy);
     // Reaching the right-hand fuse means holding the match the other way
     // round. Mirroring the whole assembly is exactly that, and the flame is
     // counter-rotated below so it still stands upright either way.
@@ -433,24 +534,269 @@ export function createSetpiece(metrics, options = {}) {
       : 0;
   }
 
+  /**
+   * The mound of earth a firework is staked in.
+   *
+   * A stick that simply stops in the grass makes the whole thing look like a
+   * sticker laid over the meadow. Pooled shadow, a low mound of soil, and a
+   * few blades pushed aside by it are what put the firework IN the ground.
+   */
+  function drawStand(ctx, st) {
+    const a = st.standAlpha;
+    if (a <= 0.01) return;
+
+    const x = stationRocketX(st);
+    const y = toWorldY(ROCKET_LOCAL.y + ROCKET_LOCAL.stick);
+    const s = scale;
+
+    ctx.save();
+
+    ctx.globalAlpha = 0.3 * a;
+    ctx.fillStyle = PALETTE.soilShadow;
+    ctx.beginPath();
+    ctx.ellipse(x, y + 0.9 * s, 11 * s, 2.9 * s, 0, 0, TAU);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.75 * a;
+    ctx.fillStyle = PALETTE.soil;
+    ctx.beginPath();
+    ctx.ellipse(x, y - 0.4 * s, 7.4 * s, 2.4 * s, 0, Math.PI, 0);
+    ctx.fill();
+
+    ctx.fillStyle = PALETTE.soilHi;
+    ctx.beginPath();
+    ctx.ellipse(x - 1.4 * s, y - 1.3 * s, 4.4 * s, 1.6 * s, 0, Math.PI, 0);
+    ctx.fill();
+
+    // Blades leaning away from the stake. `[x offset, height, drift]`.
+    ctx.lineWidth = 1.15 * s;
+    ctx.lineCap = 'round';
+    const tufts = [
+      [-8.4, -6.4, -2.6],
+      [-4.6, -8.8, -1.2],
+      [4.4, -8.2, 1.6],
+      [8.2, -5.6, 2.8],
+    ];
+    for (let i = 0; i < tufts.length; i++) {
+      const [ox, h, drift] = tufts[i];
+      ctx.strokeStyle = i % 2 ? PALETTE.bladeHi : PALETTE.blade;
+      ctx.beginPath();
+      ctx.moveTo(x + ox * s, y);
+      ctx.quadraticCurveTo(
+        x + (ox + drift * 0.4) * s,
+        y + h * 0.55 * s,
+        x + (ox + drift) * s,
+        y + h * s
+      );
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * The launch platform: a plank deck with a bore through the middle.
+   *
+   * Drawn before either station, so the chosen firework stands in front of
+   * its own pad rather than behind it.
+   */
+  function drawPad(ctx) {
+    const cx = padWorldX();
+    const groundY = toWorldY(PAD.ground);
+    const topY = padWorldTopY();
+    const halfTop = PAD.halfTop * scale;
+    const halfBase = PAD.halfBase * scale;
+    const faceHeight = groundY - topY;
+
+    ctx.save();
+
+    // Contact shadow, soft-edged: a hard ellipse here read as a black hole
+    // cut in the grass rather than as shade under a solid object.
+    const pool = ctx.createRadialGradient(
+      cx,
+      groundY + 2 * scale,
+      0,
+      cx,
+      groundY + 2 * scale,
+      halfBase * 1.3
+    );
+    pool.addColorStop(0, 'rgba(3,8,4,0.62)');
+    pool.addColorStop(0.6, 'rgba(3,8,4,0.34)');
+    pool.addColorStop(1, 'rgba(3,8,4,0)');
+    ctx.fillStyle = pool;
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY + 2 * scale, halfBase * 1.3, 6 * scale, 0, 0, TAU);
+    ctx.fill();
+
+    // The front face: a splayed trapezoid, lit from the same side as the
+    // rockets, then a vertical pass so the top edge catches and the foot
+    // sinks into shadow.
+    const face = ctx.createLinearGradient(cx - halfBase, 0, cx + halfBase, 0);
+    face.addColorStop(0, PALETTE.padLo);
+    face.addColorStop(0.3, PALETTE.padMid);
+    face.addColorStop(0.52, PALETTE.padHi);
+    face.addColorStop(0.74, PALETTE.padShadeMid);
+    face.addColorStop(1, PALETTE.padLo);
+    ctx.fillStyle = face;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfTop, topY);
+    ctx.lineTo(cx + halfTop, topY);
+    ctx.lineTo(cx + halfBase, groundY);
+    ctx.lineTo(cx - halfBase, groundY);
+    ctx.closePath();
+    ctx.fill();
+
+    const faceShade = ctx.createLinearGradient(0, topY, 0, groundY);
+    faceShade.addColorStop(0, 'rgba(255,235,190,0.14)');
+    faceShade.addColorStop(0.35, 'rgba(0,0,0,0)');
+    faceShade.addColorStop(1, 'rgba(0,0,0,0.46)');
+    ctx.fillStyle = faceShade;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfTop, topY);
+    ctx.lineTo(cx + halfTop, topY);
+    ctx.lineTo(cx + halfBase, groundY);
+    ctx.lineTo(cx - halfBase, groundY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Plank seams, splaying with the face.
+    ctx.strokeStyle = PALETTE.padSeam;
+    ctx.lineWidth = 1 * scale;
+    for (let i = -2; i <= 2; i++) {
+      if (i === 0) continue;
+      const u = i / 2.6;
+      ctx.beginPath();
+      ctx.moveTo(cx + halfTop * u, topY + 1.4 * scale);
+      ctx.lineTo(cx + halfBase * u, groundY - 0.6 * scale);
+      ctx.stroke();
+    }
+
+    // A gold strap across the face — the same trim the fireworks carry.
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = PALETTE.gold;
+    const strapHalf = (halfBase + halfTop) * 0.49;
+    ctx.fillRect(cx - strapHalf, topY + faceHeight * 0.52, strapHalf * 2, 1.4 * scale);
+    ctx.globalAlpha = 1;
+
+    // The deck, seen at a shallow angle.
+    const deck = ctx.createLinearGradient(cx - halfTop, 0, cx + halfTop, 0);
+    deck.addColorStop(0, PALETTE.padRimLo);
+    deck.addColorStop(0.4, PALETTE.padRimMid);
+    deck.addColorStop(0.58, PALETTE.padRimHi);
+    deck.addColorStop(1, PALETTE.padRimLo);
+    ctx.fillStyle = deck;
+    ctx.beginPath();
+    ctx.ellipse(cx, topY, halfTop, PAD.rail * 0.6 * scale, 0, 0, TAU);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.lineWidth = 1.1 * scale;
+    ctx.beginPath();
+    ctx.ellipse(cx, topY, halfTop, PAD.rail * 0.6 * scale, 0, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // The bore the stick drops into, with a lit lip on its near edge.
+    const boreR = halfTop * 0.31;
+    const boreY = topY + 0.4 * scale;
+    const bore = ctx.createRadialGradient(cx, boreY, boreR * 0.15, cx, boreY, boreR);
+    bore.addColorStop(0, PALETTE.padBoreCore);
+    bore.addColorStop(0.72, PALETTE.padBoreMid);
+    bore.addColorStop(1, PALETTE.padBoreEdge);
+    ctx.fillStyle = bore;
+    ctx.beginPath();
+    ctx.ellipse(cx, boreY, boreR, boreR * 0.36, 0, 0, TAU);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.32;
+    ctx.strokeStyle = PALETTE.padBoreLip;
+    ctx.lineWidth = 0.9 * scale;
+    ctx.beginPath();
+    ctx.ellipse(cx, boreY, boreR, boreR * 0.36, 0, Math.PI, 0);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Grass in front of the base, so the pad sits in the meadow rather than
+    // on top of it. `[x as a fraction of the base, height, drift]`.
+    ctx.lineWidth = 1.2 * scale;
+    ctx.lineCap = 'round';
+    const fringe = [
+      [-1.02, -7.5, -0.13],
+      [-0.76, -5, 0.08],
+      [-0.4, -8.6, -0.1],
+      [0.34, -6.2, 0.11],
+      [0.7, -9, 0.14],
+      [1.0, -5.4, 0.16],
+    ];
+    for (let i = 0; i < fringe.length; i++) {
+      const [u, h, drift] = fringe[i];
+      const bx = cx + halfBase * u;
+      const by = groundY + 4.5 * scale;
+      ctx.strokeStyle = i % 2 ? PALETTE.bladeHi : PALETTE.blade;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(
+        bx + drift * halfBase * 0.4,
+        by + h * 0.55 * scale,
+        bx + drift * halfBase,
+        by + h * scale
+      );
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * The binding where the fuse meets the stick.
+   *
+   * Three turns of cord across the stick. Without it the fuse and the rocket
+   * are two lines that happen to touch; with it they are one assembly.
+   */
+  function drawTie(ctx, st) {
+    const x = stationRocketX(st) + st.wx;
+    const y = toWorldY(FUSE.y0) + st.wy;
+
+    ctx.save();
+    ctx.globalAlpha = st.alpha;
+    ctx.strokeStyle = PALETTE.fuseTie;
+    ctx.lineWidth = 1.1 * scale;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < TIE_TURNS; i++) {
+      const ty = y + (i - 1) * 1.9 * scale;
+      ctx.beginPath();
+      ctx.moveTo(x - 2.4 * scale, ty);
+      ctx.lineTo(x + 2.4 * scale, ty + 0.6 * scale);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /** Draw one whole station: fuse, rocket, tip, ring, ghost demo, match. */
   function drawStation(ctx, st) {
     // --- Fuse ------------------------------------------------------------
     // Drawn from the burn head to the rocket base; the burnt portion in
     // front of the head is simply not drawn.
+    // The stake it stands in goes down before anything else, so the fuse and
+    // the stick sit on top of the earth rather than under it.
+    drawStand(ctx, st);
+
     const progress = burnProgressOf(st);
     const last = st.fusePath.length - 1;
     const startIdx = Math.min(last, Math.floor(progress * last));
     if (startIdx < last) {
+      ctx.globalAlpha = st.alpha;
       ctx.strokeStyle = PALETTE.fuse;
       ctx.lineWidth = FUSE.width * scale;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(st.fusePath[startIdx].x, st.fusePath[startIdx].y);
+      ctx.moveTo(st.fusePath[startIdx].x + st.wx, st.fusePath[startIdx].y + st.wy);
       for (let i = startIdx + 1; i <= last; i++) {
-        ctx.lineTo(st.fusePath[i].x, st.fusePath[i].y);
+        ctx.lineTo(st.fusePath[i].x + st.wx, st.fusePath[i].y + st.wy);
       }
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     // --- Rocket ------------------------------------------------------------
@@ -458,13 +804,14 @@ export function createSetpiece(metrics, options = {}) {
       const urdu = st.id === 'ur';
       drawRocket(
         ctx,
-        toWorldX(ROCKET_LOCAL.x, st),
-        toWorldY(ROCKET_LOCAL.y),
+        stationRocketX(st) + st.wx,
+        toWorldY(ROCKET_LOCAL.y) + st.wy,
         scale,
         0,
         {
           stickLength: ROCKET_LOCAL.stick,
           livery: st.livery,
+          alpha: st.alpha,
           // The language, printed on the tube. Nastaliq needs a larger size
           // than Jost to read as the same size, and sits high in its box.
           label: st.label.label,
@@ -473,15 +820,24 @@ export function createSetpiece(metrics, options = {}) {
           labelRtl: urdu,
         }
       );
+      drawTie(ctx, st);
     }
 
     // --- Unlit fuse tip ----------------------------------------------------
     // Still unlit while the match is on its way over.
     if (st.state === 'idle' || st.state === 'armed' || st.state === 'striking') {
+      ctx.globalAlpha = st.alpha;
       ctx.fillStyle = PALETTE.fuse;
       ctx.beginPath();
-      ctx.arc(toWorldX(TIP.x, st), toWorldY(TIP.y), TIP.r * scale, 0, TAU);
+      ctx.arc(
+        toWorldX(TIP.x, st) + st.wx,
+        toWorldY(TIP.y) + st.wy,
+        TIP.r * scale,
+        0,
+        TAU
+      );
       ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
     // --- Pulsing ring on the fuse tip --------------------------------------
@@ -593,7 +949,7 @@ export function createSetpiece(metrics, options = {}) {
     const fromY = target.y - MATCH_DROP.dy;
     const mx = fromX + (target.x - fromX) * reach;
     const my = fromY + (target.y - fromY) * reach;
-    drawMatch(ctx, fade, mirrorX(mx), my, flick, mirror);
+    drawMatch(ctx, fade, mirrorX(mx), my, flick, mirror, st.wx, st.wy);
   }
 
   /**
@@ -624,7 +980,7 @@ export function createSetpiece(metrics, options = {}) {
     },
     get fuseTipWorld() {
       const st = chosen();
-      return { x: toWorldX(TIP.x, st), y: toWorldY(TIP.y) };
+      return { x: toWorldX(TIP.x, st) + st.wx, y: toWorldY(TIP.y) + st.wy };
     },
     get burnHeadWorld() {
       const st = chosen();
@@ -633,21 +989,57 @@ export function createSetpiece(metrics, options = {}) {
         st.fusePath.length - 1,
         Math.floor(pr * (st.fusePath.length - 1))
       );
-      return st.fusePath[idx];
+      const p = st.fusePath[idx];
+      return { x: p.x + st.wx, y: p.y + st.wy };
     },
     get rocketBaseWorld() {
       const st = chosen();
+      const y = toWorldY(ROCKET_LOCAL.y) + st.wy;
       return {
-        x: toWorldX(ROCKET_LOCAL.x, st),
-        y: toWorldY(ROCKET_LOCAL.y),
+        x: stationRocketX(st) + st.wx,
+        y,
         scale,
         stickLength: ROCKET_LOCAL.stick,
-        topY: toWorldY(ROCKET_LOCAL.y) + ROCKET.topY * scale,
+        topY: y + ROCKET.topY * scale,
       };
     },
     get matchWorld() {
       const st = chosen();
-      return { x: toWorldX(MATCH.x, st), y: toWorldY(MATCH.y), angle: MATCH.angle };
+      return {
+        x: toWorldX(MATCH.x, st) + st.wx,
+        y: toWorldY(MATCH.y) + st.wy,
+        angle: MATCH.angle,
+      };
+    },
+
+    /**
+     * How far through the move to the pad we are, 0 to 1.
+     *
+     * The renderer reads this to push the camera in as the firework is set
+     * up, so the framing follows the action instead of holding a wide shot
+     * through the one moment the viewer is meant to be watching.
+     */
+    get stagingProgress() {
+      return easeInOutCubic(clamp01(stageT));
+    },
+
+    /** World position of the platform, for the camera to aim at. */
+    get padWorld() {
+      return { x: padWorldX(), y: padWorldTopY(), ground: toWorldY(PAD.ground) };
+    },
+
+    /**
+     * Carry the chosen firework to the pad and clear the other one away.
+     *
+     * `done` fires once it is standing on the platform, which is the cue for
+     * the director to start — nothing should be lit until the firework is
+     * where it will be fired from.
+     */
+    beginStaging(done) {
+      stageT = 0;
+      staging = true;
+      onStaged = done || null;
+      applyStaging();
     },
 
     /** The chosen firework's colourway, so the flying rocket matches it. */
@@ -824,18 +1216,39 @@ export function createSetpiece(metrics, options = {}) {
     reset() {
       time = 0;
       chosenId = null;
+      stageT = 0;
+      staging = false;
+      onStaged = null;
       for (const st of stations) {
         st.burnT = 0;
         st.strikeT = 0;
         st.burnDone = false;
         st.demoRunning = true;
         st.rocketVisible = true;
+        st.wx = 0;
+        st.wy = 0;
+        st.alpha = 1;
+        st.standAlpha = 1;
         st.state = 'idle';
       }
     },
 
     update(dt) {
       time += dt;
+
+      if (staging) {
+        stageT += dt / STAGE_SECONDS;
+        applyStaging();
+        if (stageT >= 1) {
+          stageT = 1;
+          staging = false;
+          const done = onStaged;
+          onStaged = null;
+          applyStaging();
+          if (done) done();
+        }
+      }
+
       for (const st of stations) {
         if (st.state === 'striking') {
           st.strikeT += dt;
@@ -867,6 +1280,7 @@ export function createSetpiece(metrics, options = {}) {
 
       ctx.save();
       ctx.translate(0, -top);
+      drawPad(ctx);
       for (const st of stations) drawStation(ctx, st);
       drawTheMatch(ctx);
       ctx.globalAlpha = 1;
