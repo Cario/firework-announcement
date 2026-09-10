@@ -24,7 +24,6 @@ import { drawDisplayText } from './fx/textPoints.js';
 import { createPrompt } from './ui/prompt.js';
 import { createMuteToggle } from './ui/muteToggle.js';
 import { createInviteCard } from './ui/inviteCard.js';
-import { createLoader } from './ui/loader.js';
 import { createBackdrop } from './scene/backdrop.js';
 
 import * as sound from './audio/sound.js';
@@ -214,17 +213,13 @@ if (!canvasEl) {
    * Input — the whole viewport is the target
    * ---------------------------------------------------------------- */
 
-  // Nothing is armed until the loading screen is dismissed: a stray tap that
-  // lands as the overlay fades would otherwise light a firework the viewer
-  // never saw, and choose their language for them.
-  let armed = false;
-
-  const loader = createLoader(stageEl || document.body, {
-    onContinue: () => {
-      armed = true;
-      primeAudio();
-    },
-  });
+  // Live from the first frame. There is no longer an opening screen to get
+  // past: the link opens on the meadow, with the two fireworks and the
+  // question already in front of the viewer.
+  //
+  // `armed` stays as a flag because it is also what stops a second tap during
+  // the sequence, and what `returnToChooser` re-arms on replay.
+  let armed = true;
 
   /**
    * Audio unlock, separate from ignition.

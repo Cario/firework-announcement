@@ -6,9 +6,9 @@ night sky, bursting into the announcement one line at a time before settling
 into a card you can read and share.
 
 Built for phones first, and for viewers who are not comfortable with
-technology: there is one thing to do on the screen, it is signposted three ways
-(a pulsing ring on the fuse, a match that repeatedly drifts in to demonstrate
-the tap, and a plain-language label), and tapping anywhere at all works.
+technology: the link opens straight onto the two fireworks, there is one thing
+to do on the screen, it is signposted two ways (a pulsing ring on each fuse and
+a plain-language question above them), and tapping anywhere at all works.
 
 ## Running it
 
